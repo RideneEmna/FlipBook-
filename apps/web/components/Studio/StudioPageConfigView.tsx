@@ -23,6 +23,8 @@ import {
   Move,
   Circle,
   Target,
+  Maximize2,
+  LayoutGrid,
 } from 'lucide-react';
 import StudioStepper from './StudioStepper';
 import PageConfigPanel from './page-config/PageConfigPanel';
@@ -31,6 +33,12 @@ import LivePreviewModal from './page-config/LivePreviewModal';
 import {
   TOOL_DEFS,
   DEFAULT_ITEM_DATA,
+  CANVAS_PRESETS,
+  type CanvasPresetKey,
+  type CanvasPresetSetting,
+  MIN_CANVAS_DIM,
+  MAX_CANVAS_DIM,
+  isValidCanvasDim,
   type InteractiveToolKey,
   type InteractiveItem,
   type StudioConfigPage,
@@ -46,9 +54,10 @@ interface Props {
   initialJobId?: string | null;
   initialPages?: { pageNumber: number; imagePath: string; thumbPath: string }[];
   persistedPages?: StudioConfigPage[];
+  initialCanvasPreset?: CanvasPresetSetting;
   onProceedToConversion: (projectData: {
     pages: StudioConfigPage[];
-    meta: { title?: string };
+    meta: { title?: string; canvasPreset?: CanvasPresetSetting };
   }) => void;
 }
 
@@ -76,6 +85,7 @@ export default function StudioPageConfigView({
   initialJobId,
   initialPages,
   persistedPages,
+  initialCanvasPreset,
   onProceedToConversion,
 }: Props) {
   const [isLoadingPdf, setIsLoadingPdf] = useState<boolean>(() => {
@@ -117,7 +127,43 @@ export default function StudioPageConfigView({
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isLiveOpen, setIsLiveOpen] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [aspectRatio, setAspectRatio] = useState<number>(3 / 4);
+  const [pageAspectRatio, setPageAspectRatio] = useState<number>(3 / 4);
+
+  // Canvas size presets state
+  const [canvasPresetKey, setCanvasPresetKey] = useState<CanvasPresetKey>(
+    initialCanvasPreset?.key || 'fit'
+  );
+  const [customDimensions, setCustomDimensions] = useState<{ width: number; height: number }>({
+    width: initialCanvasPreset?.customWidth || initialCanvasPreset?.width || 1024,
+    height: initialCanvasPreset?.customHeight || initialCanvasPreset?.height || 768,
+  });
+  const [customInputW, setCustomInputW] = useState<string>(
+    String(initialCanvasPreset?.customWidth || initialCanvasPreset?.width || 1024)
+  );
+  const [customInputH, setCustomInputH] = useState<string>(
+    String(initialCanvasPreset?.customHeight || initialCanvasPreset?.height || 768)
+  );
+  const [customDimError, setCustomDimError] = useState<string | null>(null);
+
+  const handleCustomDimensionChange = (wStr: string, hStr: string) => {
+    setCustomInputW(wStr);
+    setCustomInputH(hStr);
+
+    const wNum = Number(wStr);
+    const hNum = Number(hStr);
+
+    if (!Number.isFinite(wNum) || wNum < MIN_CANVAS_DIM || wNum > MAX_CANVAS_DIM) {
+      setCustomDimError(`Largeur entre ${MIN_CANVAS_DIM} et ${MAX_CANVAS_DIM} px`);
+      return;
+    }
+    if (!Number.isFinite(hNum) || hNum < MIN_CANVAS_DIM || hNum > MAX_CANVAS_DIM) {
+      setCustomDimError(`Hauteur entre ${MIN_CANVAS_DIM} et ${MAX_CANVAS_DIM} px`);
+      return;
+    }
+
+    setCustomDimError(null);
+    setCustomDimensions({ width: Math.round(wNum), height: Math.round(hNum) });
+  };
 
   // Drawing state
   const [draftRect, setDraftRect] = useState<{
@@ -145,6 +191,59 @@ export default function StudioPageConfigView({
   } | null>(null);
 
   const currentPage = pages[currentPageIndex] || pages[0];
+
+  const selectedPreset =
+    CANVAS_PRESETS.find((p) => p.key === canvasPresetKey) || CANVAS_PRESETS[0];
+
+  const effectivePageAspect = pageAspectRatio > 0 ? pageAspectRatio : 3 / 4;
+
+  let workspaceWidth = 1000;
+  let workspaceHeight = Math.round(1000 / effectivePageAspect);
+  let workspaceAspect = effectivePageAspect;
+
+  if (canvasPresetKey === 'fit') {
+    workspaceAspect = effectivePageAspect;
+    workspaceWidth = canvasRef.current?.width || 1000;
+    workspaceHeight = canvasRef.current?.height || Math.round(1000 / effectivePageAspect);
+  } else if (canvasPresetKey === 'custom') {
+    const w = customDimensions.width;
+    const h = customDimensions.height;
+    if (isValidCanvasDim(w) && isValidCanvasDim(h)) {
+      workspaceWidth = w;
+      workspaceHeight = h;
+      workspaceAspect = w / h;
+    }
+  } else if (selectedPreset.width && selectedPreset.height) {
+    workspaceWidth = selectedPreset.width;
+    workspaceHeight = selectedPreset.height;
+    workspaceAspect = selectedPreset.width / selectedPreset.height;
+  }
+
+  // Calculate proportional containment of PDF page inside workspace without stretching or cropping
+  let pageBox = { left: 0, top: 0, width: 100, height: 100 };
+  if (canvasPresetKey !== 'fit' && effectivePageAspect > 0 && workspaceAspect > 0) {
+    if (workspaceAspect > effectivePageAspect) {
+      // Workspace is wider than page -> pillarbox (centered horizontally)
+      const wPct = (effectivePageAspect / workspaceAspect) * 100;
+      const leftPct = (100 - wPct) / 2;
+      pageBox = {
+        left: Math.max(0, leftPct),
+        top: 0,
+        width: Math.min(100, wPct),
+        height: 100,
+      };
+    } else {
+      // Workspace is taller than page -> letterbox (centered vertically)
+      const hPct = (workspaceAspect / effectivePageAspect) * 100;
+      const topPct = (100 - hPct) / 2;
+      pageBox = {
+        left: 0,
+        top: Math.max(0, topPct),
+        width: 100,
+        height: Math.min(100, hPct),
+      };
+    }
+  }
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -245,6 +344,21 @@ export default function StudioPageConfigView({
           };
         });
 
+        if (data.canvasPreset) {
+          const cp = data.canvasPreset;
+          const k = (typeof cp === 'string' ? cp : cp.key) as CanvasPresetKey;
+          if (CANVAS_PRESETS.some((p) => p.key === k)) {
+            setCanvasPresetKey(k);
+          }
+          const cw = cp.customWidth || (k === 'custom' ? cp.width : undefined);
+          const ch = cp.customHeight || (k === 'custom' ? cp.height : undefined);
+          if (isValidCanvasDim(cw) && isValidCanvasDim(ch)) {
+            setCustomDimensions({ width: cw, height: ch });
+            setCustomInputW(String(cw));
+            setCustomInputH(String(ch));
+          }
+        }
+
         setPages(imported);
         setCurrentPageIndex(0);
         setSelectedItemId(null);
@@ -265,7 +379,7 @@ export default function StudioPageConfigView({
     renderPageToCanvas(currentPage, canvas, 1000).then(() => {
       if (cancelled) return;
       if (canvas.width > 0 && canvas.height > 0) {
-        setAspectRatio(canvas.width / canvas.height);
+        setPageAspectRatio(canvas.width / canvas.height);
       }
     });
 
@@ -638,6 +752,14 @@ export default function StudioPageConfigView({
       savedAt: new Date().toISOString(),
       pdfFileName: initialPdfFile?.name || pages[0]?.name || 'document.pdf',
       totalPages: pages.length,
+      canvasPreset: {
+        key: canvasPresetKey,
+        label: selectedPreset.label,
+        width: Math.round(workspaceWidth),
+        height: Math.round(workspaceHeight),
+        customWidth: customDimensions.width,
+        customHeight: customDimensions.height,
+      },
       pages: pages.map((p, idx) => ({
         pageNumber: idx + 1,
         kind: p.kind,
@@ -703,6 +825,21 @@ export default function StudioPageConfigView({
           };
         }
       );
+
+      if (data.canvasPreset) {
+        const cp = data.canvasPreset;
+        const k = (typeof cp === 'string' ? cp : cp.key) as CanvasPresetKey;
+        if (CANVAS_PRESETS.some((p) => p.key === k)) {
+          setCanvasPresetKey(k);
+        }
+        const cw = cp.customWidth || (k === 'custom' ? cp.width : undefined);
+        const ch = cp.customHeight || (k === 'custom' ? cp.height : undefined);
+        if (isValidCanvasDim(cw) && isValidCanvasDim(ch)) {
+          setCustomDimensions({ width: cw, height: ch });
+          setCustomInputW(String(cw));
+          setCustomInputH(String(ch));
+        }
+      }
 
       setPages(imported);
       setCurrentPageIndex(0);
@@ -779,6 +916,75 @@ export default function StudioPageConfigView({
             </button>
           </div>
 
+          {/* Canvas Size Preset Selector */}
+          <div className="flex flex-wrap items-center gap-2 bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-sm">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
+              <Maximize2 className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden sm:inline">Format :</span>
+            </div>
+
+            <select
+              value={canvasPresetKey}
+              onChange={(e) => {
+                const nextKey = e.target.value as CanvasPresetKey;
+                setCanvasPresetKey(nextKey);
+                const chosen = CANVAS_PRESETS.find((p) => p.key === nextKey);
+                if (chosen) {
+                  showToast(`Format de toile : ${chosen.label}`);
+                }
+              }}
+              aria-label="Format du canvas de travail"
+              className="bg-slate-800 text-slate-200 text-xs font-semibold rounded-lg px-2.5 py-1.5 border border-slate-600 focus:outline-none focus:border-indigo-500 cursor-pointer"
+            >
+              {CANVAS_PRESETS.map((p) => (
+                <option key={p.key} value={p.key} className="bg-slate-900 text-slate-200">
+                  {p.label} {p.width && p.height ? `(${p.width} × ${p.height})` : p.key === 'fit' ? '(Auto)' : ''}
+                </option>
+              ))}
+            </select>
+
+            {/* Custom Width & Height Inputs */}
+            {canvasPresetKey === 'custom' && (
+              <div className="flex items-center gap-1.5 pl-2 border-l border-slate-700 text-xs">
+                <div className="flex items-center gap-1">
+                  <label htmlFor="custom-w-input" className="text-slate-400 text-[11px] font-medium">L:</label>
+                  <input
+                    id="custom-w-input"
+                    type="number"
+                    min={MIN_CANVAS_DIM}
+                    max={MAX_CANVAS_DIM}
+                    value={customInputW}
+                    onChange={(e) => handleCustomDimensionChange(e.target.value, customInputH)}
+                    placeholder="1024"
+                    aria-label="Largeur personnalisée en pixels"
+                    className="w-16 px-1.5 py-1 rounded bg-slate-950 border border-slate-600 text-white text-xs font-mono focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <span className="text-slate-500">×</span>
+                <div className="flex items-center gap-1">
+                  <label htmlFor="custom-h-input" className="text-slate-400 text-[11px] font-medium">H:</label>
+                  <input
+                    id="custom-h-input"
+                    type="number"
+                    min={MIN_CANVAS_DIM}
+                    max={MAX_CANVAS_DIM}
+                    value={customInputH}
+                    onChange={(e) => handleCustomDimensionChange(customInputW, e.target.value)}
+                    placeholder="768"
+                    aria-label="Hauteur personnalisée en pixels"
+                    className="w-16 px-1.5 py-1 rounded bg-slate-950 border border-slate-600 text-white text-xs font-mono focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <span className="text-[11px] text-slate-400">px</span>
+                {customDimError && (
+                  <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 whitespace-nowrap">
+                    {customDimError}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Test Page Live Button */}
           <button
             type="button"
@@ -824,7 +1030,16 @@ export default function StudioPageConfigView({
             onClick={() =>
               onProceedToConversion({
                 pages,
-                meta: { title: initialPdfFile?.name },
+                meta: {
+                  title: initialPdfFile?.name,
+                  canvasPreset: {
+                    key: canvasPresetKey,
+                    width: Math.round(workspaceWidth),
+                    height: Math.round(workspaceHeight),
+                    customWidth: customDimensions.width,
+                    customHeight: customDimensions.height,
+                  },
+                },
               })
             }
             disabled={pages.length === 0}
@@ -909,33 +1124,75 @@ export default function StudioPageConfigView({
                   )}
 
                   {/* Canvas Stage Frame */}
-                  <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4 flex justify-center items-center">
+                  <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4 flex flex-col justify-center items-center gap-2.5">
+                    {/* Workspace status bar */}
+                    <div className="w-full flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 px-1 font-mono">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-semibold shadow-sm">
+                          <Maximize2 className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Espace Studio : {selectedPreset.label}</span>
+                        </span>
+                        <span className="text-slate-400">
+                          {canvasPresetKey === 'fit'
+                            ? `Auto (${Math.round(canvasRef.current?.width || 1000)} × ${Math.round(canvasRef.current?.height || 1414)} px)`
+                            : `${Math.round(workspaceWidth)} × ${Math.round(workspaceHeight)} px`}
+                        </span>
+                      </div>
+                      <div className="text-slate-400">
+                        Page PDF originale : {Math.round(canvasRef.current?.width || 1000)} × {Math.round(canvasRef.current?.height || 1414)} px
+                        {canvasPresetKey !== 'fit' && ' • Ratio 100% préservé'}
+                      </div>
+                    </div>
+
+                    {/* Outer Workspace Container (Dictated by Preset Aspect Ratio) */}
                     <div
-                      className="relative shadow-2xl shadow-black/50 select-none max-h-[60vh] max-w-full"
-                      style={{ width: `min(100%, calc(60vh * ${aspectRatio}))` }}
+                      className="relative shadow-2xl shadow-black/80 select-none max-h-[62vh] max-w-full rounded-xl overflow-hidden border border-slate-700/60 flex items-center justify-center bg-slate-950/80 transition-all duration-200"
+                      style={{
+                        width: `min(100%, calc(62vh * ${workspaceAspect}))`,
+                        aspectRatio: `${workspaceAspect}`,
+                      }}
                     >
-                      <canvas
-                        id="studio-main-cv"
-                        ref={canvasRef}
-                        className="block w-full bg-white rounded shadow"
+                      {/* Subtle workspace grid pattern / mat */}
+                      <div
+                        className="absolute inset-0 pointer-events-none opacity-20"
+                        style={{
+                          backgroundImage: 'radial-gradient(circle, #6366f1 1px, transparent 1px)',
+                          backgroundSize: '20px 20px',
+                        }}
                       />
 
-                      {/* Interactive Drawing Overlay */}
+                      {/* Proportional PDF Page Container (Preserves Aspect Ratio, Never Stretched or Cropped) */}
                       <div
-                        ref={overlayRef}
-                        onPointerDown={handlePointerDown}
-                        onPointerMove={handlePointerMove}
-                        onPointerUp={handlePointerUp}
-                        className={[
-                          'absolute inset-0',
-                          targetPickingItemId
-                            ? 'cursor-crosshair ring-2 ring-emerald-400/60'
-                            : activeTool
-                            ? 'cursor-crosshair'
-                            : 'cursor-default',
-                        ].join(' ')}
-                        style={{ touchAction: 'none' }}
+                        className="absolute bg-white rounded shadow-2xl shadow-black/80 transition-all duration-200 overflow-hidden"
+                        style={{
+                          left: `${pageBox.left}%`,
+                          top: `${pageBox.top}%`,
+                          width: `${pageBox.width}%`,
+                          height: `${pageBox.height}%`,
+                        }}
                       >
+                        <canvas
+                          id="studio-main-cv"
+                          ref={canvasRef}
+                          className="block w-full h-full object-contain pointer-events-none rounded"
+                        />
+
+                        {/* Interactive Drawing Overlay (aligned 1:1 on top of the PDF Page) */}
+                        <div
+                          ref={overlayRef}
+                          onPointerDown={handlePointerDown}
+                          onPointerMove={handlePointerMove}
+                          onPointerUp={handlePointerUp}
+                          className={[
+                            'absolute inset-0',
+                            targetPickingItemId
+                              ? 'cursor-crosshair ring-2 ring-emerald-400/60'
+                              : activeTool
+                              ? 'cursor-crosshair'
+                              : 'cursor-default',
+                          ].join(' ')}
+                          style={{ touchAction: 'none' }}
+                        >
                         {/* Rendered Items on Overlay */}
                         {currentPage?.items?.map((it) => {
                           const def = TOOL_DEFS[it.type];
@@ -1145,58 +1402,65 @@ export default function StudioPageConfigView({
                       </div>
                     </div>
                   </div>
-                </section>
+                </div>
+              </section>
 
-                {/* Right Configuration Panel */}
-                {currentPage && (
-                  <PageConfigPanel
-                    page={currentPage}
-                    pageNumber={currentPageIndex + 1}
-                    selectedItemId={selectedItemId}
-                    onSelectItem={setSelectedItemId}
-                    onUpdateItem={handleUpdateItem}
-                    onDeleteItem={handleDeleteItem}
-                    onRecropArtwork={handleRecropArtwork}
-                    onStartSelectTarget={(id) => setTargetPickingItemId(id)}
-                    isSettingTarget={targetPickingItemId === selectedItemId}
-                  />
-                )}
-              </div>
+              {/* Right Configuration Panel */}
+              {currentPage && (
+                <PageConfigPanel
+                  page={currentPage}
+                  pageNumber={currentPageIndex + 1}
+                  selectedItemId={selectedItemId}
+                  onSelectItem={setSelectedItemId}
+                  onUpdateItem={handleUpdateItem}
+                  onDeleteItem={handleDeleteItem}
+                  onRecropArtwork={handleRecropArtwork}
+                  onStartSelectTarget={(id) => setTargetPickingItemId(id)}
+                  isSettingTarget={targetPickingItemId === selectedItemId}
+                />
+              )}
+            </div>
 
-              {/* 5. Bottom Table des Pages (Thumbnails Strip) */}
-              <PageThumbnailsStrip
-                pages={pages}
-                currentPageIndex={currentPageIndex}
-                onSelectPage={setCurrentPageIndex}
-                onDuplicatePage={handleDuplicatePage}
-                onDeletePage={handleDeletePage}
-                onAddBlankPage={handleAddBlankPage}
-                onImportPdfPages={handleImportPdfPages}
-                onReorderPages={handleReorderPages}
-                onToast={showToast}
-              />
-            </>
-          )}
-        </main>
+            {/* 5. Bottom Table des Pages (Thumbnails Strip) */}
+            <PageThumbnailsStrip
+              pages={pages}
+              currentPageIndex={currentPageIndex}
+              onSelectPage={setCurrentPageIndex}
+              onDuplicatePage={handleDuplicatePage}
+              onDeletePage={handleDeletePage}
+              onAddBlankPage={handleAddBlankPage}
+              onImportPdfPages={handleImportPdfPages}
+              onReorderPages={handleReorderPages}
+              onToast={showToast}
+            />
+          </>
+        )}
+      </main>
 
-        {/* Footer */}
-        <footer className="text-center pt-2 text-slate-500 text-xs">
-          <p>
-            Flipbook Studio Pro Engine v4.2 · Compilateur HTML5 Autonome • Tous
-            droits réservés &copy; 2026
-          </p>
-        </footer>
-      </div>
+      {/* Footer */}
+      <footer className="text-center pt-2 text-slate-500 text-xs">
+        <p>
+          Flipbook Studio Pro Engine v4.2 · Compilateur HTML5 Autonome • Tous
+          droits réservés &copy; 2026
+        </p>
+      </footer>
+    </div>
 
-      {/* Live Preview Modal */}
-      {isLiveOpen && currentPage && (
-        <LivePreviewModal
-          page={currentPage}
-          pageNumber={currentPageIndex + 1}
-          onClose={() => setIsLiveOpen(false)}
-          onToast={showToast}
-        />
-      )}
+    {/* Live Preview Modal */}
+    {isLiveOpen && currentPage && (
+      <LivePreviewModal
+        page={currentPage}
+        pageNumber={currentPageIndex + 1}
+        onClose={() => setIsLiveOpen(false)}
+        onToast={showToast}
+        workspacePreset={{
+          key: canvasPresetKey,
+          label: selectedPreset.label,
+          aspectRatio: workspaceAspect,
+          pageBox,
+        }}
+      />
+    )}
 
       {/* Toast Notification */}
       {toastMessage && (

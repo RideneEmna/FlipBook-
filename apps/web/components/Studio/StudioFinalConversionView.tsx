@@ -34,6 +34,7 @@ interface Props {
   pages: StudioConfigPage[];
   pdfFile: File | null;
   settings: ConversionSettings;
+  projectMeta?: { title?: string; canvasPreset?: any };
   onBackToConfig: () => void;
 }
 
@@ -41,6 +42,7 @@ export default function StudioFinalConversionView({
   pages,
   pdfFile,
   settings,
+  projectMeta,
   onBackToConfig,
 }: Props) {
   const [selectedFormat, setSelectedFormat] = useState<'flipbook' | 'slides'>('flipbook');
@@ -270,6 +272,7 @@ export default function StudioFinalConversionView({
       startMode: selectedFormat,
       pdfFileName: pdfFile?.name || pages[0]?.name || 'document.pdf',
       totalPages: pages.length,
+      canvasPreset: projectMeta?.canvasPreset,
       pages: pages.map((p, idx) => {
         const pageNum = idx + 1;
         const genP = generatedPages?.find((g) => g.pageNumber === pageNum);

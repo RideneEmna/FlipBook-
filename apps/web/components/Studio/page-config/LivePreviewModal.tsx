@@ -9,9 +9,21 @@ interface Props {
   pageNumber: number;
   onClose: () => void;
   onToast: (msg: string) => void;
+  workspacePreset?: {
+    key: string;
+    label: string;
+    aspectRatio: number;
+    pageBox: { left: number; top: number; width: number; height: number };
+  };
 }
 
-export default function LivePreviewModal({ page, pageNumber, onClose, onToast }: Props) {
+export default function LivePreviewModal({
+  page,
+  pageNumber,
+  onClose,
+  onToast,
+  workspacePreset,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioInstancesRef = useRef<Record<string, HTMLAudioElement>>({});
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
@@ -197,19 +209,64 @@ export default function LivePreviewModal({ page, pageNumber, onClose, onToast }:
 
       {/* Main Page Stage */}
       <div
-        className="relative shadow-2xl rounded-lg overflow-hidden bg-white mt-10 max-h-[82vh]"
-        style={{ width: `min(94vw, calc(82vh * ${aspectRatio}))` }}
+        className={
+          workspacePreset && workspacePreset.key !== 'fit'
+            ? 'relative shadow-2xl rounded-2xl overflow-hidden bg-slate-950/80 border border-slate-700/60 mt-10 max-h-[82vh] flex items-center justify-center transition-all'
+            : 'relative shadow-2xl rounded-lg overflow-hidden bg-white mt-10 max-h-[82vh]'
+        }
+        style={{
+          width:
+            workspacePreset && workspacePreset.key !== 'fit'
+              ? `min(94vw, calc(82vh * ${workspacePreset.aspectRatio}))`
+              : `min(94vw, calc(82vh * ${aspectRatio}))`,
+          aspectRatio:
+            workspacePreset && workspacePreset.key !== 'fit'
+              ? `${workspacePreset.aspectRatio}`
+              : undefined,
+        }}
       >
-        <canvas ref={canvasRef} className="block w-full bg-white select-none" />
+        {/* Subtle workspace grid pattern for presets */}
+        {workspacePreset && workspacePreset.key !== 'fit' && (
+          <div
+            className="absolute inset-0 pointer-events-none opacity-20"
+            style={{
+              backgroundImage: 'radial-gradient(circle, #6366f1 1px, transparent 1px)',
+              backgroundSize: '20px 20px',
+            }}
+          />
+        )}
 
-        {/* Live Interactivity Overlay */}
-        <div className="absolute inset-0">
-          {page.items.map((it) => {
-            const col = it.color || '#6366f1';
-            const left = `${it.x * 100}%`;
-            const top = `${it.y * 100}%`;
-            const width = `${it.w * 100}%`;
-            const height = `${it.h * 100}%`;
+        {/* Proportional PDF Page Container (preserves aspect ratio, overlays 1:1) */}
+        <div
+          className={
+            workspacePreset && workspacePreset.key !== 'fit'
+              ? 'absolute bg-white rounded-lg shadow-2xl shadow-black/80 overflow-hidden'
+              : 'relative w-full h-full'
+          }
+          style={
+            workspacePreset && workspacePreset.key !== 'fit'
+              ? {
+                  left: `${workspacePreset.pageBox.left}%`,
+                  top: `${workspacePreset.pageBox.top}%`,
+                  width: `${workspacePreset.pageBox.width}%`,
+                  height: `${workspacePreset.pageBox.height}%`,
+                }
+              : undefined
+          }
+        >
+          <canvas
+            ref={canvasRef}
+            className="block w-full h-full object-contain bg-white select-none pointer-events-none"
+          />
+
+          {/* Live Interactivity Overlay */}
+          <div className="absolute inset-0">
+            {page.items.map((it) => {
+              const col = it.color || '#6366f1';
+              const left = `${it.x * 100}%`;
+              const top = `${it.y * 100}%`;
+              const width = `${it.w * 100}%`;
+              const height = `${it.h * 100}%`;
 
             if (it.type === 'highlight') {
               return (
@@ -522,6 +579,7 @@ export default function LivePreviewModal({ page, pageNumber, onClose, onToast }:
           })}
         </div>
       </div>
+    </div>
 
       {/* Submodal for Zoom Image */}
       {zoomModalSrc && (

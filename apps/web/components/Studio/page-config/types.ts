@@ -202,3 +202,52 @@ export const DEFAULT_ITEM_DATA: Record<InteractiveToolKey, Partial<InteractiveIt
     color: '#10b981',
   },
 };
+
+export type CanvasPresetKey =
+  | 'fit'
+  | 'a4-portrait'
+  | 'a4-landscape'
+  | 'portrait-9-16'
+  | 'standard-4-3'
+  | 'us-letter'
+  | 'square'
+  | 'custom';
+
+export interface CanvasPresetDef {
+  key: CanvasPresetKey;
+  label: string;
+  width?: number;
+  height?: number;
+  desc: string;
+}
+
+export const CANVAS_PRESETS: CanvasPresetDef[] = [
+  { key: 'fit', label: 'Fit to Page', desc: 'Ajuster automatiquement à la page PDF' },
+  { key: 'a4-portrait', label: 'A4 Portrait', width: 794, height: 1123, desc: '794 × 1123 px' },
+  { key: 'a4-landscape', label: 'A4 Landscape', width: 1123, height: 794, desc: '1123 × 794 px' },
+  { key: 'portrait-9-16', label: 'Portrait 9:16', width: 720, height: 1280, desc: '720 × 1280 px' },
+  { key: 'standard-4-3', label: 'Standard 4:3', width: 1024, height: 768, desc: '1024 × 768 px' },
+  { key: 'us-letter', label: 'US Letter', width: 816, height: 1056, desc: '816 × 1056 px' },
+  { key: 'square', label: 'Square', width: 1080, height: 1080, desc: '1080 × 1080 px' },
+  { key: 'custom', label: 'Custom', desc: 'Dimensions personnalisées' },
+];
+
+export interface CanvasPresetSetting {
+  key: CanvasPresetKey;
+  width?: number;
+  height?: number;
+  customWidth?: number;
+  customHeight?: number;
+}
+
+export const MIN_CANVAS_DIM = 200;
+export const MAX_CANVAS_DIM = 4000;
+
+export function isValidCanvasDim(val: unknown): val is number {
+  return (
+    typeof val === 'number' &&
+    Number.isFinite(val) &&
+    val >= MIN_CANVAS_DIM &&
+    val <= MAX_CANVAS_DIM
+  );
+}

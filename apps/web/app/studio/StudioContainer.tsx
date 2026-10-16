@@ -60,12 +60,14 @@ export default function StudioContainer() {
   };
 
   const [initialJsonProject, setInitialJsonProject] = useState<File | null>(null);
+  const [projectMeta, setProjectMeta] = useState<{ title?: string; canvasPreset?: any }>({});
 
   // Step 1 primary submit: moves to Step 2 ("Configuration des pages")
   const handleUploadSubmit = (file: File) => {
     setUploadedFile(file);
     setInitialJsonProject(null);
     setConfiguredPages([]);
+    setProjectMeta({});
     setPhase('config');
   };
 
@@ -74,15 +76,17 @@ export default function StudioContainer() {
     setUploadedFile(null);
     setInitialJsonProject(file);
     setConfiguredPages([]);
+    setProjectMeta({});
     setPhase('config');
   };
 
   // Step 2 proceed to conversion: moves to Phase 3 ("Conversion finale")
   const handleProceedToConversion = (projectData: {
     pages: StudioConfigPage[];
-    meta: { title?: string };
+    meta: { title?: string; canvasPreset?: any };
   }) => {
     setConfiguredPages(projectData.pages);
+    setProjectMeta(projectData.meta || {});
     setPhase('final_conversion');
   };
 
@@ -95,6 +99,7 @@ export default function StudioContainer() {
         initialPdfFile={uploadedFile}
         initialProjectJsonFile={initialJsonProject}
         persistedPages={configuredPages}
+        initialCanvasPreset={projectMeta.canvasPreset}
         onProceedToConversion={handleProceedToConversion}
       />
     );
@@ -107,6 +112,7 @@ export default function StudioContainer() {
         pages={configuredPages}
         pdfFile={uploadedFile}
         settings={settings}
+        projectMeta={projectMeta}
         onBackToConfig={() => setPhase('config')}
       />
     );

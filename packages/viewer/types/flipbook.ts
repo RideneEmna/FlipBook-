@@ -89,4 +89,10 @@ export interface BookConfig {
   totalPages: number;
   pageAspectRatio: number;
   pages: PageData[];
+  canvasPreset?: {
+    key?: string;
+    id?: string;
+    width?: number;
+    height?: number;
+  };
 }
