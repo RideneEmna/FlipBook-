@@ -347,7 +347,7 @@ export default function PageConfigPanel({
                 <>
                   <div>
                     <label className="block font-semibold text-slate-300 mb-1.5">
-                      Titre de la vidéo
+                      Titre de la vidéo (optionnel)
                     </label>
                     <input
                       type="text"
@@ -355,21 +355,25 @@ export default function PageConfigPanel({
                       onChange={(e) =>
                         onUpdateItem(selectedItem.id, { title: e.target.value })
                       }
-                      placeholder="Vidéo démonstration..."
+                      placeholder="Ex: Vidéo explicative..."
                       className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-slate-100 focus:outline-none focus:border-indigo-500"
                     />
                   </div>
                   <div>
-                    <label className="block font-semibold text-slate-300 mb-1.5">
-                      URL directe (.mp4)
+                    <label className="block font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
+                      <span>Lien vidéo (YouTube ou .mp4)</span>
+                      <span className="text-[10px] text-red-400 font-normal">YouTube supporté</span>
                     </label>
                     <input
                       type="text"
-                      value={selectedItem.url || ''}
+                      value={selectedItem.url || selectedItem.youtubeUrl || ''}
                       onChange={(e) =>
-                        onUpdateItem(selectedItem.id, { url: e.target.value })
+                        onUpdateItem(selectedItem.id, {
+                          url: e.target.value,
+                          youtubeUrl: e.target.value,
+                        })
                       }
-                      placeholder="https://example.com/video.mp4"
+                      placeholder="https://www.youtube.com/watch?v=... ou https://youtu.be/..."
                       className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-700/60 text-slate-100 focus:outline-none focus:border-indigo-500"
                     />
                   </div>
@@ -856,13 +860,28 @@ export default function PageConfigPanel({
 
                     {/* Target Role (Answer Key) */}
                     <div>
-                      <label className="block font-semibold text-slate-300 mb-2">
-                        Rôle de cette zone (Corrigé enseignant)
-                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="font-semibold text-slate-300 text-xs">
+                          Rôle de cette zone (Corrigé enseignant)
+                        </label>
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <button
                           type="button"
-                          onClick={() => onUpdateItem(selectedItem.id, { isCorrect: true })}
+                          onClick={() => {
+                            // Enforce only ONE correct option per question
+                            page.items.forEach((it) => {
+                              if (
+                                it.type === 'circle-exercise' &&
+                                (it.questionId || it.groupId || 'q1') === currentQId
+                              ) {
+                                onUpdateItem(it.id, {
+                                  isCorrect: it.id === selectedItem.id,
+                                  circleMode: 'single',
+                                });
+                              }
+                            });
+                          }}
                           className={`px-3 py-2.5 rounded-xl border text-xs font-semibold text-left transition-all flex items-start gap-2 ${
                             selectedItem.isCorrect !== false
                               ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200 shadow-sm shadow-emerald-500/20'
@@ -872,13 +891,18 @@ export default function PageConfigPanel({
                           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                           <div>
                             <span className="block font-bold text-slate-100">Bonne réponse</span>
-                            <span className="text-[10.5px] text-slate-400">Zone correcte à entourer</span>
+                            <span className="text-[10.5px] text-slate-400">Seule zone correcte</span>
                           </div>
                         </button>
 
                         <button
                           type="button"
-                          onClick={() => onUpdateItem(selectedItem.id, { isCorrect: false })}
+                          onClick={() =>
+                            onUpdateItem(selectedItem.id, {
+                              isCorrect: false,
+                              circleMode: 'single',
+                            })
+                          }
                           className={`px-3 py-2.5 rounded-xl border text-xs font-semibold text-left transition-all flex items-start gap-2 ${
                             selectedItem.isCorrect === false
                               ? 'bg-amber-500/20 border-amber-500 text-amber-200 shadow-sm shadow-amber-500/20'
@@ -887,54 +911,112 @@ export default function PageConfigPanel({
                         >
                           <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                           <div>
-                            <span className="block font-bold text-slate-100">Distracteur (Leurre)</span>
-                            <span className="text-[10.5px] text-slate-400">Zone piège à éviter</span>
+                            <span className="block font-bold text-slate-100">Fausse réponse</span>
+                            <span className="text-[10.5px] text-slate-400">Option incorrecte</span>
                           </div>
                         </button>
                       </div>
                     </div>
 
-                    {/* Evaluation Mode */}
-                    <div>
-                      <label className="block font-semibold text-slate-300 mb-2">
-                        Mode de sélection de la question
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => syncQuestionField({ circleMode: 'single' })}
-                          className={`px-3 py-2.5 rounded-xl border text-xs font-semibold text-left transition-all flex flex-col gap-1 ${
-                            (selectedItem.circleMode || 'single') === 'single'
-                              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200 shadow-sm shadow-emerald-500/20'
-                              : 'bg-slate-900/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
-                          }`}
-                        >
-                          <span className="font-bold flex items-center gap-1.5 text-slate-100">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                            Choix unique
-                          </span>
-                          <span className="text-[11px] text-slate-400">
-                            Évaluation immédiate à chaque tracé
-                          </span>
-                        </button>
+                    {/* Option Sizing & Normalization */}
+                    <div className="rounded-xl border border-slate-700/60 bg-slate-950/60 p-3 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="font-semibold text-slate-200 text-xs flex items-center gap-1.5">
+                          <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Dimensions de la zone ({Math.round((selectedItem.w || 0.1) * 100)}% × {Math.round((selectedItem.h || 0.08) * 100)}%)</span>
+                        </label>
+                      </div>
 
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-[11px] text-slate-400 block mb-1">
+                            Largeur : {Math.round((selectedItem.w || 0.1) * 100)}%
+                          </span>
+                          <input
+                            type="range"
+                            min="3"
+                            max="60"
+                            step="0.5"
+                            value={Math.round((selectedItem.w || 0.1) * 100)}
+                            onChange={(e) => {
+                              const newW = parseFloat(e.target.value) / 100;
+                              const currentW = selectedItem.w || 0.1;
+                              const cx = selectedItem.x + currentW / 2;
+                              const newX = Math.max(0, Math.min(1 - newW, cx - newW / 2));
+                              onUpdateItem(selectedItem.id, { w: newW, x: newX });
+                            }}
+                            className="w-full accent-indigo-500 cursor-pointer"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-slate-400 block mb-1">
+                            Hauteur : {Math.round((selectedItem.h || 0.08) * 100)}%
+                          </span>
+                          <input
+                            type="range"
+                            min="2"
+                            max="40"
+                            step="0.5"
+                            value={Math.round((selectedItem.h || 0.08) * 100)}
+                            onChange={(e) => {
+                              const newH = parseFloat(e.target.value) / 100;
+                              const currentH = selectedItem.h || 0.08;
+                              const cy = selectedItem.y + currentH / 2;
+                              const newY = Math.max(0, Math.min(1 - newH, cy - newH / 2));
+                              onUpdateItem(selectedItem.id, { h: newH, y: newY });
+                            }}
+                            className="w-full accent-indigo-500 cursor-pointer"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Equalize dimensions across all options in this question */}
+                      {page.items.filter(
+                        (it) => it.type === 'circle-exercise' && (it.questionId || it.groupId || 'q1') === currentQId
+                      ).length > 1 && (
                         <button
                           type="button"
-                          onClick={() => syncQuestionField({ circleMode: 'multiple' })}
-                          className={`px-3 py-2.5 rounded-xl border text-xs font-semibold text-left transition-all flex flex-col gap-1 ${
-                            selectedItem.circleMode === 'multiple'
-                              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-200 shadow-sm shadow-emerald-500/20'
-                              : 'bg-slate-900/60 border-slate-700/60 text-slate-400 hover:border-slate-600'
-                          }`}
+                          onClick={() => {
+                            const targetW = selectedItem.w || 0.1;
+                            const targetH = selectedItem.h || 0.08;
+                            page.items.forEach((opt) => {
+                              if (
+                                opt.type === 'circle-exercise' &&
+                                (opt.questionId || opt.groupId || 'q1') === currentQId
+                              ) {
+                                const currentW = opt.w || 0.1;
+                                const currentH = opt.h || 0.08;
+                                const cx = opt.x + currentW / 2;
+                                const cy = opt.y + currentH / 2;
+                                const newX = Math.max(0, Math.min(1 - targetW, cx - targetW / 2));
+                                const newY = Math.max(0, Math.min(1 - targetH, cy - targetH / 2));
+                                onUpdateItem(opt.id, { w: targetW, h: targetH, x: newX, y: newY });
+                              }
+                            });
+                          }}
+                          className="w-full py-2 px-3 rounded-lg text-xs font-semibold bg-indigo-950/60 hover:bg-indigo-900/60 text-indigo-300 border border-indigo-500/40 transition flex items-center justify-center gap-1.5"
+                          title="Uniformiser les dimensions de toutes les options de cette question"
                         >
-                          <span className="font-bold flex items-center gap-1.5 text-slate-100">
-                            <Target className="w-3.5 h-3.5 text-emerald-400" />
-                            Choix multiple
-                          </span>
-                          <span className="text-[11px] text-slate-400">
-                            Validation via bouton « Corriger »
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>
+                            Harmoniser la taille des {
+                              page.items.filter(
+                                (it) => it.type === 'circle-exercise' && (it.questionId || it.groupId || 'q1') === currentQId
+                              ).length
+                            } options
                           </span>
                         </button>
+                      )}
+                    </div>
+
+                    {/* Information Banner */}
+                    <div className="rounded-xl bg-slate-900/70 border border-slate-700/60 p-3 flex items-start gap-2.5 text-xs text-slate-300">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-semibold text-white block">Choix unique · Évaluation immédiate</span>
+                        <span className="text-[11px] text-slate-400 leading-relaxed block mt-0.5">
+                          Dans le flipbook, l&apos;élève clique directement sur l&apos;option de son choix. Le cercle se trace automatiquement et l&apos;évaluation s&apos;affiche à l&apos;instant.
+                        </span>
                       </div>
                     </div>
 
@@ -990,7 +1072,7 @@ export default function PageConfigPanel({
                           <div>
                             <span className="font-semibold text-slate-200">Sélection stricte sans erreur</span>
                             <p className="text-[11px] text-slate-400">
-                              Entourer un distracteur ou une zone incorrecte invalide toute la réponse.
+                              Entourer une fausse réponse invalide toute la réponse.
                             </p>
                           </div>
                         </label>

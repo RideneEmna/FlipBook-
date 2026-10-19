@@ -80,7 +80,9 @@ def _sanitize_filename(name: str) -> str:
 import urllib.parse
 
 def _build_zip_response(project: dict[str, Any], job_id: str | None, start_mode: str = "flipbook") -> Response:
-    project["startMode"] = start_mode
+    # Only set startMode if the project doesn't already carry one (e.g. set by /export/save)
+    if not project.get("startMode"):
+        project["startMode"] = start_mode
     title = project.get("title") or project.get("name") or "my-book"
     safe_title = _sanitize_filename(title)
     ascii_title = re.sub(r'[^a-zA-Z0-9_\-]', '_', safe_title) or "flipbook"
@@ -260,4 +262,6 @@ async def export_flipbook_zip_get(job_id: str = "", format: str = "flipbook"):
                     project = json.loads(proj_file.read_text(encoding="utf-8"))
                 except Exception:
                     pass
-    return _build_zip_response(project, clean_job_id, format)
+    # Prefer the startMode already stored in project.json; use query param as fallback
+    resolved_format = project.get("startMode") or format
+    return _build_zip_response(project, clean_job_id, resolved_format)

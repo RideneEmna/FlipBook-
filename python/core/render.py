@@ -163,6 +163,8 @@ def render_pdf(
                     "imagePath": f"public/pages/{name}",
                     "thumbPath": f"public/pages/thumbs/{name}",
                     "title": f"Page {number}",
+                    "width": width,
+                    "height": height,
                 }
             )
             _notify(

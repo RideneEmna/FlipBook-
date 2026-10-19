@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Play, Volume2, Eye, ZoomIn, CheckCircle2 } from 'lucide-react';
+import { X, Play, Volume2, Eye, ZoomIn, CheckCircle2, ExternalLink } from 'lucide-react';
 import type { StudioConfigPage, InteractiveItem } from './types';
+import { getYouTubeEmbedUrl } from '@/lib/youtube';
 
 interface Props {
   page: StudioConfigPage;
@@ -29,8 +30,38 @@ export default function LivePreviewModal({
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [revealedItems, setRevealedItems] = useState<Record<string, boolean>>({});
   const [zoomModalSrc, setZoomModalSrc] = useState<string | null>(null);
-  const [videoModalSrc, setVideoModalSrc] = useState<string | null>(null);
+  const [videoModalData, setVideoModalData] = useState<{ src: string; title?: string } | null>(null);
   const [aspectRatio, setAspectRatio] = useState<number>(3 / 4);
+  const [circleSelections, setCircleSelections] = useState<Record<string, { itemId: string; isCorrect: boolean }>>({});
+
+  const playFeedbackSound = (correct: boolean) => {
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      if (correct) {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(783.99, ctx.currentTime + 0.18);
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+      } else {
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(160, ctx.currentTime + 0.22);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
+      }
+    } catch {}
+  };
 
   // Render canvas from page cache or offscreen
   useEffect(() => {
@@ -62,7 +93,7 @@ export default function LivePreviewModal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (zoomModalSrc) setZoomModalSrc(null);
-        else if (videoModalSrc) setVideoModalSrc(null);
+        else if (videoModalData) setVideoModalData(null);
         else onClose();
       }
     };
@@ -80,7 +111,7 @@ export default function LivePreviewModal({
         } catch {}
       });
     };
-  }, [page, onClose, zoomModalSrc, videoModalSrc]);
+  }, [page, onClose, zoomModalSrc, videoModalData]);
 
   const speakText = (text?: string, lang?: string, rate?: number) => {
     if (!text) {
@@ -361,28 +392,32 @@ export default function LivePreviewModal({
             }
 
             if (it.type === 'video') {
+              const videoSrc = it.youtubeUrl || it.url || it.fileUrl;
               return (
                 <button
                   key={it.id}
                   type="button"
                   onClick={() => {
-                    const src = it.fileUrl || it.url;
-                    if (!src) onToast('Aucune vidéo configurée.');
-                    else setVideoModalSrc(src);
+                    if (!videoSrc) {
+                      onToast('Aucune vidéo configurée. Renseignez un lien YouTube dans le panneau de droite.');
+                    } else {
+                      setVideoModalData({ src: videoSrc, title: it.title });
+                    }
                   }}
-                  title={it.title || 'Vidéo'}
-                  className="absolute flex items-center justify-center rounded-lg border text-sm transition-all hover:scale-105 active:scale-95 shadow-md"
+                  title={it.title || 'Regarder la vidéo sur YouTube'}
+                  aria-label={it.title || 'Regarder la vidéo sur YouTube'}
+                  className="absolute flex items-center justify-center p-0 bg-transparent border-0 rounded-lg transition-transform hover:scale-110 active:scale-95 cursor-pointer z-20 group"
                   style={{
                     left,
                     top,
                     width,
                     height,
-                    backgroundColor: `${col}33`,
-                    borderColor: col,
-                    color: '#ffffff',
                   }}
                 >
-                  <span className="text-sm">🎬</span>
+                  <svg viewBox="0 0 68 48" className="w-full h-full max-w-[54px] max-h-[38px] drop-shadow-md">
+                    <path d="M66.52 7.74c-.78-2.93-3.09-5.24-6.02-6.02C55.22 0 34 0 34 0S12.78 0 7.5 1.72c-2.93.78-5.24 3.09-6.02 6.02C0 13.02 0 24 0 24s0 10.98 1.48 16.26c.78 2.93 3.09 5.24 6.02 6.02C12.78 48 34 48 34 48s21.22 0 26.5-1.72c2.93-.78 5.24-3.09 6.02-6.02C68 34.98 68 24 68 24s0-10.98-1.48-16.26z" fill="#FF0000" stroke="#FFFFFF" strokeWidth="1.5" strokeOpacity="0.6"/>
+                    <path d="M45 24 27 14v20z" fill="#FFFFFF"/>
+                  </svg>
                 </button>
               );
             }
@@ -555,23 +590,52 @@ export default function LivePreviewModal({
             }
 
             if (it.type === 'circle-exercise') {
+              const qId = it.questionId || it.groupId || 'q1';
+              const selection = circleSelections[qId];
+              const isSelected = selection?.itemId === it.id;
+              const isCorrect = it.isCorrect !== false;
+
               return (
-                <div
+                <button
                   key={it.id}
-                  className="absolute pointer-events-none rounded-full border-2 border-dashed border-emerald-400/50 bg-emerald-500/10 flex items-center justify-center"
+                  type="button"
+                  onClick={() => {
+                    if (isSelected) {
+                      // Deselect if clicked again
+                      setCircleSelections((prev) => {
+                        const copy = { ...prev };
+                        delete copy[qId];
+                        return copy;
+                      });
+                      return;
+                    }
+                    setCircleSelections((prev) => ({
+                      ...prev,
+                      [qId]: { itemId: it.id, isCorrect },
+                    }));
+                    playFeedbackSound(isCorrect);
+                    if (isCorrect) {
+                      onToast('Bonne réponse ! 🎯');
+                    } else {
+                      onToast('Ce n\'est pas la bonne réponse, réessaie ! ❌');
+                    }
+                  }}
+                  className={`absolute rounded-full transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                    isSelected
+                      ? isCorrect
+                        ? 'border-[3.5px] border-emerald-500 bg-emerald-500/15 shadow-[0_0_12px_rgba(34,197,94,0.45)]'
+                        : 'border-[3.5px] border-rose-500 bg-rose-500/15 shadow-[0_0_12px_rgba(239,68,68,0.45)]'
+                      : 'border-0 bg-transparent hover:bg-sky-400/10 hover:ring-2 hover:ring-sky-400/40'
+                  }`}
                   style={{
                     left,
                     top,
                     width,
                     height,
-                    zIndex: 6,
+                    zIndex: isSelected ? 12 : 7,
                   }}
-                  title="Zone cible à entourer par l'élève"
-                >
-                  <span className="text-[9px] font-bold text-emerald-600 bg-white/90 px-1 py-0.5 rounded shadow-sm">
-                    Zone cible ({it.circleMode === 'multiple' ? 'Multiple' : 'Unique'} • {Math.round((it.tolerance ?? 0.5) * 100)}%)
-                  </span>
-                </div>
+                  aria-label="Option à entourer"
+                />
               );
             }
 
@@ -596,19 +660,72 @@ export default function LivePreviewModal({
         </div>
       )}
 
-      {/* Submodal for Video Playback */}
-      {videoModalSrc && (
+      {/* Submodal for Video Playback (Supports YouTube & Direct Video) */}
+      {videoModalData && (
         <div
-          onClick={() => setVideoModalSrc(null)}
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setVideoModalData(null)}
+          className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer"
         >
-          <div className="relative max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
-            <video
-              src={videoModalSrc}
-              controls
-              autoPlay
-              className="w-full rounded-2xl shadow-2xl bg-black border border-white/20"
-            />
+          <div
+            className="relative max-w-4xl w-full rounded-2xl bg-slate-900 border border-slate-700/80 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.9)] overflow-hidden cursor-default"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 sm:px-5 py-3 bg-slate-900/95 border-b border-slate-800">
+              <div className="flex items-center gap-2.5 min-w-0 pr-4">
+                <svg viewBox="0 0 68 48" className="w-5 h-3.5 flex-shrink-0">
+                  <path d="M66.52 7.74c-.78-2.93-3.09-5.24-6.02-6.02C55.22 0 34 0 34 0S12.78 0 7.5 1.72c-2.93.78-5.24 3.09-6.02 6.02C0 13.02 0 24 0 24s0 10.98 1.48 16.26c.78 2.93 3.09 5.24 6.02 6.02C12.78 48 34 48 34 48s21.22 0 26.5-1.72c2.93-.78 5.24-3.09 6.02-6.02C68 34.98 68 24 68 24s0-10.98-1.48-16.26z" fill="#FF0000"/>
+                  <path d="M45 24 27 14v20z" fill="#FFFFFF"/>
+                </svg>
+                <h3 className="text-xs sm:text-sm font-semibold text-slate-200 truncate">
+                  {videoModalData.title || 'Vidéo YouTube'}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {videoModalData.src.startsWith('http') && (
+                  <a
+                    href={videoModalData.src}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs text-sky-400 bg-sky-950/40 border border-sky-800/40 hover:bg-sky-900/50 transition-colors"
+                    title="Ouvrir le lien externe"
+                  >
+                    <span>YouTube</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setVideoModalData(null)}
+                  className="flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="Fermer (Échap)"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Video Body */}
+            <div className="relative w-full aspect-video bg-black flex items-center justify-center">
+              {getYouTubeEmbedUrl(videoModalData.src) ? (
+                <iframe
+                  src={getYouTubeEmbedUrl(videoModalData.src)!}
+                  title={videoModalData.title || 'Lecteur Vidéo YouTube'}
+                  className="w-full h-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
+                  referrerPolicy="strict-origin-when-cross-origin"
+                  allowFullScreen
+                />
+              ) : (
+                <video
+                  src={videoModalData.src}
+                  controls
+                  autoPlay
+                  className="w-full h-full"
+                />
+              )}
+            </div>
           </div>
         </div>
       )}

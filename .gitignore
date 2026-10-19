@@ -19,3 +19,6 @@ livre/
 *.zip
 .DS_Store
 tmp_data/
+scratch/
+*.db
+

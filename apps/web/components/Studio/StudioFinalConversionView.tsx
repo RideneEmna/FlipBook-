@@ -92,10 +92,14 @@ export default function StudioFinalConversionView({
   const convertItemsToInteractions = (items: InteractiveItem[], pageNum: number) => {
     return items.map((it, idx) => {
       const iId = `${pageNum}-${idx}-${it.id}`;
-      const xPct = it.x * 100;
-      const yPct = it.y * 100;
-      const wPct = it.w * 100;
-      const hPct = it.h * 100;
+      const normX = it.x > 1 ? it.x / 100 : it.x;
+      const normY = it.y > 1 ? it.y / 100 : it.y;
+      const normW = (it.w ?? 0.1) > 1 ? (it.w ?? 0.1) / 100 : (it.w ?? 0.1);
+      const normH = (it.h ?? 0.08) > 1 ? (it.h ?? 0.08) / 100 : (it.h ?? 0.08);
+      const xPct = Number((normX * 100).toFixed(2));
+      const yPct = Number((normY * 100).toFixed(2));
+      const wPct = Number((normW * 100).toFixed(2));
+      const hPct = Number((normH * 100).toFixed(2));
 
       switch (it.type) {
         case 'audio':
@@ -125,8 +129,8 @@ export default function StudioFinalConversionView({
             y: yPct,
             width: wPct,
             height: hPct,
-            title: it.title || 'Vidéo YouTube',
-            youtubeUrl: it.url || '',
+            title: it.title?.trim() || '',
+            youtubeUrl: it.youtubeUrl || it.url || '',
           };
         case 'zoom':
           return {
@@ -233,13 +237,15 @@ export default function StudioFinalConversionView({
             y: yPct,
             width: wPct,
             height: hPct,
+            w: wPct,
+            h: hPct,
             tolerance: it.tolerance ?? 0.5,
-            mode: it.circleMode || 'single',
+            mode: 'single',
             questionId: qId,
             questionTitle: it.questionTitle || `Question ${qId.replace(/^q/i, '') || '1'}`,
             isCorrect: it.isCorrect !== false,
-            requireAll: it.requireAll !== undefined ? it.requireAll : true,
-            strictSelection: it.strictSelection !== undefined ? it.strictSelection : true,
+            requireAll: false,
+            strictSelection: true,
             groupId: qId,
             label: it.label || 'Zone à entourer',
             title: it.title || it.label || 'Exercice entourer',
@@ -253,13 +259,15 @@ export default function StudioFinalConversionView({
             y: yPct,
             width: wPct,
             height: hPct,
+            w: wPct,
+            h: hPct,
           };
       }
     });
   };
 
   // Build the complete project object for export
-  const buildProjectJson = (generatedPages?: { pageNumber: number; imagePath: string; thumbPath: string; title: string }[]) => {
+  const buildProjectJson = (generatedPages?: { pageNumber: number; imagePath: string; thumbPath: string; title: string; width?: number; height?: number }[]) => {
     const rawTitle = (pdfFile?.name || pages[0]?.name || 'mon-livre').replace(/\.pdf$/i, '');
     const safeTitle = rawTitle.replace(/[^a-zA-Z0-9_-]/g, '_') || 'my-book';
 
@@ -273,6 +281,8 @@ export default function StudioFinalConversionView({
       pdfFileName: pdfFile?.name || pages[0]?.name || 'document.pdf',
       totalPages: pages.length,
       canvasPreset: projectMeta?.canvasPreset,
+      pageWidth: projectMeta?.canvasPreset?.width || projectMeta?.canvasPreset?.customWidth,
+      pageHeight: projectMeta?.canvasPreset?.height || projectMeta?.canvasPreset?.customHeight,
       pages: pages.map((p, idx) => {
         const pageNum = idx + 1;
         const genP = generatedPages?.find((g) => g.pageNumber === pageNum);
@@ -284,6 +294,9 @@ export default function StudioFinalConversionView({
           imagePath: genP ? genP.imagePath : `public/pages/page-${String(pageNum).padStart(3, '0')}.webp`,
           thumbPath: genP ? genP.thumbPath : `public/pages/thumbs/page-${String(pageNum).padStart(3, '0')}.webp`,
           title: genP?.title || `Page ${pageNum}`,
+          width: p.width || genP?.width || projectMeta?.canvasPreset?.width || projectMeta?.canvasPreset?.customWidth,
+          height: p.height || genP?.height || projectMeta?.canvasPreset?.height || projectMeta?.canvasPreset?.customHeight,
+          items: p.items,
           interactions: convertItemsToInteractions(p.items || [], pageNum),
         };
       }),
@@ -463,7 +476,7 @@ export default function StudioFinalConversionView({
     if (lastJobId) {
       const baseUrl = getBaseUrl();
       const a = document.createElement('a');
-      a.href = `${baseUrl}/export/${lastJobId}`;
+      a.href = `${baseUrl}/export/${lastJobId}?format=${encodeURIComponent(selectedFormat)}`;
       a.download = zipDownloadName;
       document.body.appendChild(a);
       a.click();

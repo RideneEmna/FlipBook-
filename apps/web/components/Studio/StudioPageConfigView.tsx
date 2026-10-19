@@ -64,6 +64,20 @@ interface Props {
 let uidCounter = 1;
 const genId = () => `item_${Date.now()}_${uidCounter++}`;
 
+const parseStudioNorm = (val: any, fallback = 0.1): number => {
+  if (val === undefined || val === null) return fallback;
+  if (typeof val === 'string') {
+    const clean = val.trim();
+    const hasPct = clean.includes('%');
+    const num = parseFloat(clean);
+    if (isNaN(num)) return fallback;
+    return (hasPct || num > 1) ? num / 100 : num;
+  }
+  const num = Number(val);
+  if (isNaN(num)) return fallback;
+  return num > 1 ? num / 100 : num;
+};
+
 const TOOL_ICONS: Record<InteractiveToolKey, React.ComponentType<{ className?: string }>> = {
   highlight: Highlighter,
   lasso: Lasso,
@@ -337,8 +351,12 @@ export default function StudioPageConfigView({
             name: pageName,
             num: q.sourcePdfPageNum || q.num || i + 1,
             doc: matchedDoc,
-            items: (q.items || []).map((it: any) => ({
+            items: (q.items || q.interactions || []).map((it: any) => ({
               ...it,
+              x: parseStudioNorm(it.x, 0.1),
+              y: parseStudioNorm(it.y, 0.1),
+              w: parseStudioNorm(it.w ?? it.width, 0.1),
+              h: parseStudioNorm(it.h ?? it.height, 0.08),
               id: it.id || genId(),
             })),
           };
@@ -599,19 +617,26 @@ export default function StudioPageConfigView({
       setTargetPickingItemId(newItem.id);
       showToast('Source créée ! Cliquez ou tracez sur la page pour placer la zone cible 🎯');
     } else if (activeTool === 'circle-exercise') {
-      const existingCircle = (pages[currentPageIndex]?.items || []).find(
+      const pageItems = pages[currentPageIndex]?.items || [];
+      const existingCircle = pageItems.find(
         (i) => i.type === 'circle-exercise'
       );
       const qId = existingCircle?.questionId || existingCircle?.groupId || 'q1';
-      newItem.circleMode = existingCircle?.circleMode || 'single';
-      newItem.tolerance = existingCircle?.tolerance ?? 0.5;
+      const hasCorrectForQ = pageItems.some(
+        (i) =>
+          i.type === 'circle-exercise' &&
+          (i.questionId || i.groupId || 'q1') === qId &&
+          i.isCorrect !== false
+      );
+      newItem.circleMode = 'single';
+      newItem.tolerance = 0.5;
       newItem.questionId = qId;
       newItem.questionTitle = existingCircle?.questionTitle || `Question ${qId.replace(/^q/i, '') || '1'}`;
-      newItem.isCorrect = true;
-      newItem.requireAll = existingCircle?.requireAll !== undefined ? existingCircle.requireAll : true;
-      newItem.strictSelection = existingCircle?.strictSelection !== undefined ? existingCircle.strictSelection : true;
+      newItem.isCorrect = !hasCorrectForQ;
+      newItem.requireAll = false;
+      newItem.strictSelection = true;
       newItem.groupId = qId;
-      newItem.color = '#10b981';
+      newItem.color = !hasCorrectForQ ? '#10b981' : '#f59e0b';
     }
 
     setPages((prev) =>
@@ -768,6 +793,10 @@ export default function StudioPageConfigView({
         itemsCount: p.items.length,
         items: p.items.map(({ fileUrl, ...rest }) => ({
           ...rest,
+          w: rest.w,
+          h: rest.h,
+          width: rest.w,
+          height: rest.h,
         })),
       })),
     };
@@ -818,8 +847,12 @@ export default function StudioPageConfigView({
             name: pageName,
             num: q.sourcePdfPageNum || q.num || i + 1,
             doc: matchedDoc,
-            items: (q.items || []).map((it: any) => ({
+            items: (q.items || q.interactions || []).map((it: any) => ({
               ...it,
+              x: parseStudioNorm(it.x, 0.1),
+              y: parseStudioNorm(it.y, 0.1),
+              w: parseStudioNorm(it.w ?? it.width, 0.1),
+              h: parseStudioNorm(it.h ?? it.height, 0.08),
               id: it.id || genId(),
             })),
           };
@@ -882,66 +915,69 @@ export default function StudioPageConfigView({
         <StudioStepper currentStep={2} />
 
         {/* 3. Action & Navigation Menu Bar */}
-        <div className="glass-panel rounded-2xl p-4 shadow-xl flex flex-wrap items-center gap-3">
-          {/* Previous / Next Arrow Controls */}
-          <div className="flex items-center gap-2 mr-2">
-            <button
-              type="button"
-              onClick={() => setCurrentPageIndex((prev) => Math.max(prev - 1, 0))}
-              disabled={currentPageIndex === 0 || pages.length === 0}
-              aria-label="Page précédente"
-              className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-800 hover:bg-slate-700 disabled:opacity-35 text-slate-200 border border-slate-700 transition"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
+        <div className="relative rounded-2xl shadow-2xl overflow-hidden">
+          {/* Gradient border glow */}
+          <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-indigo-600/30 via-purple-600/20 to-indigo-600/30 blur-sm pointer-events-none" />
+          <div className="relative flex flex-wrap items-center gap-2 px-4 py-3 bg-slate-900/80 backdrop-blur-xl border border-white/[0.07] rounded-2xl">
 
-            <div className="px-3 text-sm min-w-[96px] text-center font-medium">
-              Page <b className="text-white">{pages.length > 0 ? currentPageIndex + 1 : 0}</b>{' '}
-              <span className="text-slate-500">/</span>{' '}
-              <span className="text-slate-400">{pages.length}</span>
+            {/* ── Page Navigation ── */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setCurrentPageIndex((prev) => Math.max(prev - 1, 0))}
+                disabled={currentPageIndex === 0 || pages.length === 0}
+                aria-label="Page précédente"
+                className="w-8 h-8 rounded-lg flex items-center justify-center bg-slate-800/80 hover:bg-indigo-600/30 disabled:opacity-30 text-slate-300 hover:text-white border border-slate-700/60 hover:border-indigo-500/60 transition-all active:scale-90"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <div className="flex items-center gap-1 px-3 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/25 min-w-[88px] justify-center">
+                <span className="text-xs text-slate-400 font-medium">Page</span>
+                <span className="text-sm font-bold text-white">{pages.length > 0 ? currentPageIndex + 1 : 0}</span>
+                <span className="text-slate-600 text-xs">/</span>
+                <span className="text-xs text-slate-400">{pages.length}</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCurrentPageIndex((prev) => Math.min(prev + 1, pages.length - 1))}
+                disabled={currentPageIndex >= pages.length - 1}
+                aria-label="Page suivante"
+                className="w-8 h-8 rounded-lg flex items-center justify-center bg-slate-800/80 hover:bg-indigo-600/30 disabled:opacity-30 text-slate-300 hover:text-white border border-slate-700/60 hover:border-indigo-500/60 transition-all active:scale-90"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={() =>
-                setCurrentPageIndex((prev) =>
-                  Math.min(prev + 1, pages.length - 1)
-                )
-              }
-              disabled={currentPageIndex >= pages.length - 1}
-              aria-label="Page suivante"
-              className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-800 hover:bg-slate-700 disabled:opacity-35 text-slate-200 border border-slate-700 transition"
-            >
-              <ChevronRight className="w-5 h-5" />
-            </button>
-          </div>
+            {/* ── Divider ── */}
+            <div className="hidden sm:block w-px h-7 bg-gradient-to-b from-transparent via-slate-600/80 to-transparent mx-1" />
 
-          {/* Canvas Size Preset Selector */}
-          <div className="flex flex-wrap items-center gap-2 bg-slate-900/90 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-sm">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-300">
-              <Maximize2 className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="hidden sm:inline">Format :</span>
+            {/* ── Canvas Size Preset Selector ── */}
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/50 hover:border-indigo-500/40 transition-colors">
+              <Maximize2 className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+              <span className="hidden sm:inline text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Format</span>
+              <select
+                value={canvasPresetKey}
+                onChange={(e) => {
+                  const nextKey = e.target.value as CanvasPresetKey;
+                  setCanvasPresetKey(nextKey);
+                  const chosen = CANVAS_PRESETS.find((p) => p.key === nextKey);
+                  if (chosen) {
+                    showToast(`Format de toile : ${chosen.label}`);
+                  }
+                }}
+                aria-label="Format du canvas de travail"
+                className="bg-transparent text-slate-200 text-xs font-semibold border-none focus:outline-none cursor-pointer appearance-none pr-4"
+                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236366f1' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0px center' }}
+              >
+                {CANVAS_PRESETS.map((p) => (
+                  <option key={p.key} value={p.key} className="bg-slate-900 text-slate-200">
+                    {p.label} {p.width && p.height ? `(${p.width}×${p.height})` : p.key === 'fit' ? '(Auto)' : ''}
+                  </option>
+                ))}
+              </select>
             </div>
-
-            <select
-              value={canvasPresetKey}
-              onChange={(e) => {
-                const nextKey = e.target.value as CanvasPresetKey;
-                setCanvasPresetKey(nextKey);
-                const chosen = CANVAS_PRESETS.find((p) => p.key === nextKey);
-                if (chosen) {
-                  showToast(`Format de toile : ${chosen.label}`);
-                }
-              }}
-              aria-label="Format du canvas de travail"
-              className="bg-slate-800 text-slate-200 text-xs font-semibold rounded-lg px-2.5 py-1.5 border border-slate-600 focus:outline-none focus:border-indigo-500 cursor-pointer"
-            >
-              {CANVAS_PRESETS.map((p) => (
-                <option key={p.key} value={p.key} className="bg-slate-900 text-slate-200">
-                  {p.label} {p.width && p.height ? `(${p.width} × ${p.height})` : p.key === 'fit' ? '(Auto)' : ''}
-                </option>
-              ))}
-            </select>
 
             {/* Custom Width & Height Inputs */}
             {canvasPresetKey === 'custom' && (
@@ -983,72 +1019,101 @@ export default function StudioPageConfigView({
                 )}
               </div>
             )}
-          </div>
 
-          {/* Test Page Live Button */}
-          <button
-            type="button"
-            onClick={() => setIsLiveOpen(true)}
-            disabled={pages.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs sm:text-sm font-semibold transition active:scale-95 shadow-sm disabled:opacity-50"
-          >
-            <PlayCircle className="w-4 h-4 text-indigo-400" />
-            <span>Tester cette page en direct</span>
-          </button>
+            {/* ── Divider ── */}
+            <div className="hidden sm:block w-px h-7 bg-gradient-to-b from-transparent via-slate-600/80 to-transparent mx-1" />
 
-          {/* Save Project (.json) Button */}
-          <button
-            type="button"
-            onClick={handleSaveJson}
-            disabled={pages.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs sm:text-sm font-semibold transition active:scale-95 shadow-sm disabled:opacity-50"
-          >
-            <Save className="w-4 h-4 text-indigo-400" />
-            <span>Sauvegarder projet (.json)</span>
-          </button>
+            {/* ── Utility Action Buttons ── */}
+            <div className="flex items-center gap-1.5">
+              {/* Test Live */}
+              <button
+                type="button"
+                onClick={() => setIsLiveOpen(true)}
+                disabled={pages.length === 0}
+                title="Tester cette page en direct"
+                className="group relative inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-indigo-600/20 border border-slate-700/60 hover:border-indigo-500/60 text-slate-300 hover:text-indigo-300 text-xs font-semibold transition-all active:scale-95 disabled:opacity-40"
+              >
+                <PlayCircle className="w-4 h-4 text-indigo-400 group-hover:text-indigo-300" />
+                <span className="hidden lg:inline">Tester en direct</span>
+                {/* Tooltip for small screens */}
+                <span className="lg:hidden absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-[10px] bg-slate-800 border border-slate-700 text-slate-200 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg">
+                  Tester en direct
+                </span>
+              </button>
 
-          {/* Load Project (.json) Button */}
-          <button
-            type="button"
-            onClick={() => jsonFileInputRef.current?.click()}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-xs sm:text-sm font-semibold transition active:scale-95 shadow-sm"
-          >
-            <FolderOpenDot className="w-4 h-4 text-indigo-400" />
-            <span>Charger (.json)</span>
-          </button>
-          <input
-            ref={jsonFileInputRef}
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={handleLoadJson}
-          />
+              {/* Save JSON */}
+              <button
+                type="button"
+                onClick={handleSaveJson}
+                disabled={pages.length === 0}
+                title="Sauvegarder projet (.json)"
+                className="group relative inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-emerald-600/20 border border-slate-700/60 hover:border-emerald-500/60 text-slate-300 hover:text-emerald-300 text-xs font-semibold transition-all active:scale-95 disabled:opacity-40"
+              >
+                <Save className="w-4 h-4 text-emerald-400 group-hover:text-emerald-300" />
+                <span className="hidden lg:inline">Sauvegarder</span>
+                <span className="lg:hidden absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-[10px] bg-slate-800 border border-slate-700 text-slate-200 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg">
+                  Sauvegarder projet (.json)
+                </span>
+              </button>
 
-          {/* Next Phase: Proceed to Final Conversion */}
-          <button
-            type="button"
-            onClick={() =>
-              onProceedToConversion({
-                pages,
-                meta: {
-                  title: initialPdfFile?.name,
-                  canvasPreset: {
-                    key: canvasPresetKey,
-                    width: Math.round(workspaceWidth),
-                    height: Math.round(workspaceHeight),
-                    customWidth: customDimensions.width,
-                    customHeight: customDimensions.height,
+              {/* Load JSON */}
+              <button
+                type="button"
+                onClick={() => jsonFileInputRef.current?.click()}
+                title="Charger projet (.json)"
+                className="group relative inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-amber-600/20 border border-slate-700/60 hover:border-amber-500/60 text-slate-300 hover:text-amber-300 text-xs font-semibold transition-all active:scale-95"
+              >
+                <FolderOpenDot className="w-4 h-4 text-amber-400 group-hover:text-amber-300" />
+                <span className="hidden lg:inline">Charger</span>
+                <span className="lg:hidden absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-[10px] bg-slate-800 border border-slate-700 text-slate-200 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg">
+                  Charger (.json)
+                </span>
+              </button>
+              <input
+                ref={jsonFileInputRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={handleLoadJson}
+              />
+            </div>
+
+            {/* ── Spacer ── */}
+            <div className="flex-1 min-w-0" />
+
+            {/* ── CTA: Proceed to Conversion ── */}
+            <button
+              type="button"
+              onClick={() =>
+                onProceedToConversion({
+                  pages,
+                  meta: {
+                    title: initialPdfFile?.name,
+                    canvasPreset: {
+                      key: canvasPresetKey,
+                      width: Math.round(workspaceWidth),
+                      height: Math.round(workspaceHeight),
+                      customWidth: customDimensions.width,
+                      customHeight: customDimensions.height,
+                    },
                   },
-                },
-              })
-            }
-            disabled={pages.length === 0}
-            className="ml-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-sm font-bold flex items-center gap-2 glow-btn active:scale-[0.98] transition-all disabled:opacity-50"
-          >
-            <span>Passer à la conversion</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+                })
+              }
+              disabled={pages.length === 0}
+              className="relative inline-flex items-center gap-2 px-5 py-2 rounded-xl font-bold text-sm text-white overflow-hidden disabled:opacity-50 active:scale-[0.97] transition-transform group"
+            >
+              {/* Gradient background */}
+              <span className="absolute inset-0 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 transition-all" />
+              {/* Shimmer sweep on hover */}
+              <span className="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+              {/* Outer glow */}
+              <span className="absolute inset-0 rounded-xl ring-2 ring-indigo-500/0 group-hover:ring-indigo-500/60 transition-all blur-sm" />
+              <span className="relative">Passer à la conversion</span>
+              <ArrowRight className="relative w-4 h-4" />
+            </button>
+          </div>
         </div>
+
 
         {/* 4. Main Glass Canvas & Configuration Section */}
         <main className="glass-panel rounded-3xl p-4 md:p-6 shadow-2xl glow-effect">
@@ -1064,7 +1129,7 @@ export default function StudioPageConfigView({
             </div>
           ) : (
             <>
-              <div className="grid lg:grid-cols-[minmax(0,1fr)_340px] gap-6">
+              <div className="grid lg:grid-cols-[minmax(0,1fr)_300px] gap-6">
                 {/* Left Canvas Section */}
                 <section className="min-w-0 flex flex-col">
                   {/* Tool Bar */}
@@ -1124,7 +1189,7 @@ export default function StudioPageConfigView({
                   )}
 
                   {/* Canvas Stage Frame */}
-                  <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-4 flex flex-col justify-center items-center gap-2.5">
+                  <div className="rounded-2xl bg-slate-900/60 border border-slate-800 p-2 flex flex-col justify-center items-center gap-2">
                     {/* Workspace status bar */}
                     <div className="w-full flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400 px-1 font-mono">
                       <div className="flex items-center gap-2">
@@ -1146,9 +1211,9 @@ export default function StudioPageConfigView({
 
                     {/* Outer Workspace Container (Dictated by Preset Aspect Ratio) */}
                     <div
-                      className="relative shadow-2xl shadow-black/80 select-none max-h-[62vh] max-w-full rounded-xl overflow-hidden border border-slate-700/60 flex items-center justify-center bg-slate-950/80 transition-all duration-200"
+                      className="relative shadow-2xl shadow-black/80 select-none w-full rounded-xl overflow-hidden border border-slate-700/60 flex items-center justify-center bg-slate-950/80 transition-all duration-200"
                       style={{
-                        width: `min(100%, calc(62vh * ${workspaceAspect}))`,
+                        maxHeight: '76vh',
                         aspectRatio: `${workspaceAspect}`,
                       }}
                     >
@@ -1321,11 +1386,40 @@ export default function StudioPageConfigView({
                                   }`}
                                 >
                                   <span>
-                                    [{qId}] {isCorrectTarget ? 'Bonne réponse' : 'Distracteur'}
+                                    [{qId}] {isCorrectTarget ? 'Bonne réponse' : 'Fausse réponse'}
                                   </span>
-                                  <span className="opacity-80">
-                                    ({it.circleMode === 'multiple' ? 'Multiple' : 'Unique'} • {Math.round((it.tolerance ?? 0.5) * 100)}%)
-                                  </span>
+                                </span>
+                              </div>
+                            );
+                          }
+
+                          if (it.type === 'video') {
+                            return (
+                              <div
+                                key={it.id}
+                                className="absolute pointer-events-none"
+                                style={{
+                                  left: `${it.x * 100}%`,
+                                  top: `${it.y * 100}%`,
+                                  width: `${it.w * 100}%`,
+                                  height: `${it.h * 100}%`,
+                                }}
+                              >
+                                <div
+                                  className="absolute inset-0 rounded-lg flex items-center justify-center transition-all bg-red-600/20 border-2 border-red-500 shadow-sm"
+                                  style={{
+                                    outline: isSelected ? '2px dashed #ffffff' : undefined,
+                                  }}
+                                >
+                                  <svg viewBox="0 0 68 48" className="w-7 h-5 drop-shadow">
+                                    <path d="M66.52 7.74c-.78-2.93-3.09-5.24-6.02-6.02C55.22 0 34 0 34 0S12.78 0 7.5 1.72c-2.93.78-5.24 3.09-6.02 6.02C0 13.02 0 24 0 24s0 10.98 1.48 16.26c.78 2.93 3.09 5.24 6.02 6.02C12.78 48 34 48 34 48s21.22 0 26.5-1.72c2.93-.78 5.24-3.09 6.02-6.02C68 34.98 68 24 68 24s0-10.98-1.48-16.26z" fill="#FF0000" stroke="#FFFFFF" strokeWidth="1.5" strokeOpacity="0.6"/>
+                                    <path d="M45 24 27 14v20z" fill="#FFFFFF"/>
+                                  </svg>
+                                </div>
+                                <span
+                                  className="absolute left-0 -top-4 font-bold text-[10px] px-1.5 py-0.5 rounded text-white whitespace-nowrap shadow-sm pointer-events-none bg-red-600 flex items-center gap-1"
+                                >
+                                  Vidéo YouTube
                                 </span>
                               </div>
                             );

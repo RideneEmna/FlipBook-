@@ -123,7 +123,10 @@ export const VideoModal: React.FC<VideoModalProps> = ({
         <div className="flex items-center justify-between px-4 sm:px-5 py-3 bg-slate-900/90 border-b border-slate-800">
           <div className="flex items-center gap-2.5 min-w-0 pr-4">
             <span className="flex items-center justify-center w-6 h-6 rounded-md bg-red-600/20 text-red-500 border border-red-500/30 flex-shrink-0">
-              <Play className="w-3.5 h-3.5 fill-current" />
+              <svg viewBox="0 0 68 48" className="w-4 h-3">
+                <path d="M66.52 7.74c-.78-2.93-3.09-5.24-6.02-6.02C55.22 0 34 0 34 0S12.78 0 7.5 1.72c-2.93.78-5.24 3.09-6.02 6.02C0 13.02 0 24 0 24s0 10.98 1.48 16.26c.78 2.93 3.09 5.24 6.02 6.02C12.78 48 34 48 34 48s21.22 0 26.5-1.72c2.93-.78 5.24-3.09 6.02-6.02C68 34.98 68 24 68 24s0-10.98-1.48-16.26z" fill="#FF0000"/>
+                <path d="M45 24 27 14v20z" fill="#FFFFFF"/>
+              </svg>
             </span>
             <h2 className="text-xs sm:text-sm font-semibold text-slate-200 truncate">
               {title || 'Vidéo YouTube'}

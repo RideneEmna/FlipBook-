@@ -135,6 +135,7 @@ export interface InteractiveItem {
   autoplay?: boolean;
   title?: string;
   url?: string;
+  youtubeUrl?: string;
   level?: number;
   answer?: string;
   hint?: string;
@@ -170,6 +171,8 @@ export interface StudioConfigPage {
   num?: number;
   doc?: any; // PDFDocumentProxy
   imageUrl?: string;
+  width?: number;
+  height?: number;
   items: InteractiveItem[];
 }
 
@@ -178,7 +181,7 @@ export const DEFAULT_ITEM_DATA: Record<InteractiveToolKey, Partial<InteractiveIt
   lasso: { text: '', color: '#a78bfa', read: true, lang: 'fr-FR' },
   tts: { text: '', lang: 'fr-FR', rate: 1 },
   audio: { label: 'Piste audio', autoplay: false },
-  video: { title: '', url: '' },
+  video: { title: '', url: '', youtubeUrl: '' },
   zoom: { title: 'Zoom HD', level: 2.5 },
   blank: { answer: '', hint: '', cs: false },
   reveal: { content: '', color: '#6366f1' },

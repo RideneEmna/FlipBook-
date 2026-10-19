@@ -214,9 +214,39 @@ export function startViewer(project, options = {}) {
         return div.innerHTML;
     }
 
+    function normalizePct(val, defaultVal = 0) {
+        if (val === undefined || val === null) return defaultVal;
+        if (typeof val === 'string') {
+            const clean = val.trim();
+            const hasPct = clean.includes('%');
+            const num = parseFloat(clean);
+            if (isNaN(num)) return defaultVal;
+            if (hasPct) return num;
+            return (num > 0 && num <= 1) ? num * 100 : num;
+        }
+        const num = Number(val);
+        if (isNaN(num)) return defaultVal;
+        return (num > 0 && num <= 1) ? num * 100 : num;
+    }
+
+    function getTargetBounds(target) {
+        if (!target) return { tx: 0, ty: 0, tw: 12, th: 8, cx: 6, cy: 4, rx: 6, ry: 4 };
+        const tx = normalizePct(target.x, 0);
+        const ty = normalizePct(target.y, 0);
+        const tw = normalizePct(target.width !== undefined ? target.width : target.w, 12);
+        const th = normalizePct(target.height !== undefined ? target.height : target.h, 8);
+        const cx = tx + tw / 2;
+        const cy = ty + th / 2;
+        // Generous natural padding so circle nicely encloses the selected zone
+        const rx = (tw / 2) * 1.08;
+        const ry = (th / 2) * 1.08;
+        return { tx, ty, tw, th, cx, cy, rx, ry };
+    }
+
     const AUDIO_ICON_SVG = `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;pointer-events:none;" alt="Audio"/>`;
 
     const ZOOM_LOUPE_SVG = `<svg class="zoom-loupe-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>`;
+    const YOUTUBE_ICON_SVG = `<svg class="yt-icon-svg" viewBox="0 0 68 48" width="100%" height="100%" style="display:block;pointer-events:none;overflow:visible;" xmlns="http://www.w3.org/2000/svg"><path d="M66.52 7.74c-.78-2.93-3.09-5.24-6.02-6.02C55.22 0 34 0 34 0S12.78 0 7.5 1.72c-2.93.78-5.24 3.09-6.02 6.02C0 13.02 0 24 0 24s0 10.98 1.48 16.26c.78 2.93 3.09 5.24 6.02 6.02C12.78 48 34 48 34 48s21.22 0 26.5-1.72c2.93-.78 5.24-3.09 6.02-6.02C68 34.98 68 24 68 24s0-10.98-1.48-16.26z" fill="#FF0000" stroke="#FFFFFF" stroke-width="1.5" stroke-opacity="0.6"/><path d="M45 24 27 14v20z" fill="#FFFFFF"/></svg>`;
 
     let ttsKaraokeTimer = null;
 
@@ -701,7 +731,14 @@ export function startViewer(project, options = {}) {
         const sideGap = narrow ? 16 : 84;
         const availW = Math.max(300, winW - sideGap);
         const availH = Math.max(380, winH - 12);
-        const RATIO = 0.707;
+        let RATIO = 0.707;
+        if (BOOK && BOOK.canvasPreset && BOOK.canvasPreset.width && BOOK.canvasPreset.height) {
+            RATIO = BOOK.canvasPreset.width / BOOK.canvasPreset.height;
+        } else if (BOOK && BOOK.pageWidth && BOOK.pageHeight) {
+            RATIO = BOOK.pageWidth / BOOK.pageHeight;
+        } else if (BOOK && BOOK.pages && BOOK.pages[0] && BOOK.pages[0].width && BOOK.pages[0].height) {
+            RATIO = BOOK.pages[0].width / BOOK.pages[0].height;
+        }
         const maxByW = (availW - 12) / 2;
         const maxByH = availH * RATIO;
         const w = Math.max(260, Math.floor(Math.min(maxByW, maxByH)));
@@ -827,8 +864,8 @@ export function startViewer(project, options = {}) {
 
         (page.interactions || []).forEach((inter, idxInter) => {
             const iId = inter.id || `${page.pageNumber}-${idxInter}`;
-            const leftVal = String(inter.x || '50%').includes('%') ? inter.x : (inter.x + '%');
-            const topVal = String(inter.y || '50%').includes('%') ? inter.y : (inter.y + '%');
+            const leftVal = (inter.x !== undefined && inter.x !== null) ? (String(inter.x).includes('%') ? inter.x : (inter.x + '%')) : '50%';
+            const topVal = (inter.y !== undefined && inter.y !== null) ? (String(inter.y).includes('%') ? inter.y : (inter.y + '%')) : '50%';
 
             if (inter.type === 'audio') {
                 const btn = document.createElement('button');
@@ -876,18 +913,12 @@ export function startViewer(project, options = {}) {
                 btn.style.top = topVal;
                 if (inter.size) {
                     btn.style.width = inter.size + 'px';
-                    btn.style.height = inter.size + 'px';
-                    btn.style.fontSize = Math.max(12, inter.size * 0.45) + 'px';
+                    btn.style.height = Math.round(inter.size * (34 / 48)) + 'px';
                 }
-                btn.setAttribute('aria-label', inter.title || "Regarder la vidéo");
-                btn.title = inter.title || 'Vidéo YouTube';
-                btn.innerHTML = '▶';
-                if (inter.title) {
-                    const tip = document.createElement('span');
-                    tip.className = 'tooltip';
-                    tip.textContent = inter.title;
-                    btn.appendChild(tip);
-                }
+                const hasCustomTitle = inter.title && !/^(?:vid[ée]o\s*youtube)$/i.test(inter.title.trim());
+                btn.setAttribute('aria-label', hasCustomTitle ? inter.title : "Regarder la vidéo sur YouTube");
+                btn.title = hasCustomTitle ? inter.title : 'Regarder la vidéo sur YouTube';
+                btn.innerHTML = `${YOUTUBE_ICON_SVG}`;
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     openVideoModal(inter.youtubeUrl, inter.title);
@@ -1144,6 +1175,38 @@ export function startViewer(project, options = {}) {
 
                 initDraggableInteraction(dragDiv, targetDiv, overlay, inter);
                 overlay.appendChild(dragDiv);
+            } else if (inter.type === 'circle-exercise') {
+                const circleOption = document.createElement('div');
+                circleOption.className = 'widget-circle-option';
+                circleOption.id = 'circle-opt-' + iId;
+                const bounds = getTargetBounds(inter);
+                circleOption.style.left = bounds.tx + '%';
+                circleOption.style.top = bounds.ty + '%';
+                circleOption.style.width = bounds.tw + '%';
+                circleOption.style.height = bounds.th + '%';
+                circleOption.setAttribute('data-target-id', iId);
+                circleOption.setAttribute('data-qid', inter.questionId || inter.groupId || 'q1');
+                circleOption.setAttribute('role', 'button');
+                circleOption.setAttribute('tabindex', '0');
+                circleOption.setAttribute('aria-label', inter.label || inter.title || 'Option à entourer');
+
+                const onSelect = (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    selectCircleOption(page.pageNumber, inter);
+                };
+                circleOption.addEventListener('click', onSelect);
+                circleOption.addEventListener('pointerdown', (e) => {
+                    e.stopPropagation();
+                });
+                circleOption.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onSelect(e);
+                    }
+                });
+
+                overlay.appendChild(circleOption);
             }
         });
 
@@ -1172,7 +1235,7 @@ export function startViewer(project, options = {}) {
         div.appendChild(circleSvg);
 
         // Initialize circle exercise state and render circles if any
-        const circleTargets = (page.interactions || []).filter(i => i.type === 'circle-exercise');
+        const circleTargets = getCircleTargetsForPage(page.pageNumber);
         if (circleTargets.length > 0) {
             const pNum = String(page.pageNumber);
             getOrCreateCirclePageState(pNum);
@@ -1193,7 +1256,14 @@ export function startViewer(project, options = {}) {
         const side = narrow ? 16 : 56;
         const availW = Math.max(280, r.width - side * 2);
         const availH = Math.max(360, r.height - (narrow ? 12 : 20));
-        const RATIO = 0.707;
+        let RATIO = 0.707;
+        if (BOOK && BOOK.canvasPreset && BOOK.canvasPreset.width && BOOK.canvasPreset.height) {
+            RATIO = BOOK.canvasPreset.width / BOOK.canvasPreset.height;
+        } else if (BOOK && BOOK.pageWidth && BOOK.pageHeight) {
+            RATIO = BOOK.pageWidth / BOOK.pageHeight;
+        } else if (BOOK && BOOK.pages && BOOK.pages[0] && BOOK.pages[0].width && BOOK.pages[0].height) {
+            RATIO = BOOK.pages[0].width / BOOK.pages[0].height;
+        }
         const slideW = Math.max(280, Math.min(availW, Math.floor(availH * RATIO)));
         const slideH = Math.floor(slideW / RATIO);
 
@@ -1358,7 +1428,12 @@ export function startViewer(project, options = {}) {
     function getCircleTargetsForPage(pNum) {
         const pIdx = parseInt(pNum, 10) - 1;
         const pageData = BOOK && BOOK.pages ? BOOK.pages[pIdx] : null;
-        return (pageData && pageData.interactions ? pageData.interactions : []).filter(i => i.type === 'circle-exercise');
+        if (!pageData) return [];
+        let list = (pageData.interactions || []).filter(i => i.type === 'circle-exercise');
+        if (list.length === 0 && pageData.items) {
+            list = pageData.items.filter(i => i.type === 'circle-exercise');
+        }
+        return list;
     }
 
     function getOrCreateCirclePageState(pNum) {
@@ -1372,17 +1447,17 @@ export function startViewer(project, options = {}) {
                     questions[qId] = {
                         id: qId,
                         title: t.questionTitle || ('Question ' + (qId.replace(/^q/i, '') || '1')),
-                        mode: t.mode || 'single',
+                        mode: 'single',
                         tolerance: t.tolerance !== undefined ? parseFloat(t.tolerance) : 0.5,
-                        requireAll: t.requireAll !== undefined ? t.requireAll : true,
-                        strictSelection: t.strictSelection !== undefined ? t.strictSelection : true,
+                        requireAll: false,
+                        strictSelection: true,
                         targets: [],
                         state: 'ready', // 'ready' | 'drawing' | 'selecting' | 'correcting' | 'correct' | 'incorrect' | 'retry'
                         attempt: 1,
                         circles: [] // Array of { id, questionId, cx, cy, rx, ry, status, attempt }
                     };
                 }
-                if (t.mode === 'multiple') questions[qId].mode = 'multiple';
+                questions[qId].mode = 'single';
                 if (t.tolerance !== undefined) questions[qId].tolerance = parseFloat(t.tolerance);
                 questions[qId].targets.push(t);
             });
@@ -1404,13 +1479,71 @@ export function startViewer(project, options = {}) {
         return circleExerciseState[pNum];
     }
 
+    function selectCircleOption(pNum, target) {
+        if (!target) return;
+        const pStr = String(pNum);
+        const pState = getOrCreateCirclePageState(pStr);
+        const qId = target.questionId || target.groupId || 'q1';
+        const q = pState.questions[qId];
+        if (!q) return;
+
+        // If clicking the option that is currently selected in this question, toggle it off to allow reset
+        const currentActiveCircle = q.circles.length > 0 ? q.circles[0] : null;
+        if (currentActiveCircle && currentActiveCircle.targetId === target.id) {
+            q.circles = [];
+            q.state = 'ready';
+            renderPageCircles(pStr);
+            updateCircleBarUI();
+            return;
+        }
+
+        const bounds = getTargetBounds(target);
+        const cxPct = bounds.cx;
+        const cyPct = bounds.cy;
+        const rxPct = bounds.rx;
+        const ryPct = bounds.ry;
+
+        // Cancel multiple choice: only one circle per question, replaces prior selection
+        q.mode = 'single';
+        q.circles = [];
+
+        const isCorrect = (target.isCorrect !== false);
+        const newCircle = {
+            id: 'circle_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+            questionId: q.id,
+            targetId: target.id,
+            cx: cxPct,
+            cy: cyPct,
+            rx: rxPct,
+            ry: ryPct,
+            status: isCorrect ? 'correct' : 'incorrect',
+            attempt: q.attempt || 1,
+        };
+        q.circles.push(newCircle);
+        q.state = isCorrect ? 'correct' : 'incorrect';
+
+        renderPageCircles(pStr);
+        updateCircleBarUI();
+
+        if (isCorrect) {
+            playCelebrationChime();
+            toast('Bonne réponse ! 🎯');
+        } else {
+            q.attempt = (q.attempt || 1) + 1;
+            playErrorTone();
+            toast('Ce n\'est pas la bonne réponse, réessaie ! ❌');
+        }
+    }
+    window.selectCircleOption = selectCircleOption;
+
     function checkCircleMatchesTarget(cxPct, cyPct, rxPct, ryPct, t) {
-        const tx = parseFloat(t.x);
-        const ty = parseFloat(t.y);
-        const tw = parseFloat(t.width);
-        const th = parseFloat(t.height);
-        const tcx = tx + tw / 2;
-        const tcy = ty + th / 2;
+        const bounds = getTargetBounds(t);
+        const tx = bounds.tx;
+        const ty = bounds.ty;
+        const tw = bounds.tw;
+        const th = bounds.th;
+        const tcx = bounds.cx;
+        const tcy = bounds.cy;
 
         const sx1 = cxPct - rxPct;
         const sx2 = cxPct + rxPct;
@@ -1455,12 +1588,9 @@ export function startViewer(project, options = {}) {
 
         for (const q of questions) {
             for (const t of q.targets) {
-                const tx = parseFloat(t.x);
-                const ty = parseFloat(t.y);
-                const tw = parseFloat(t.width);
-                const th = parseFloat(t.height);
-                const tcx = tx + tw / 2;
-                const tcy = ty + th / 2;
+                const bounds = getTargetBounds(t);
+                const tcx = bounds.cx;
+                const tcy = bounds.cy;
                 const dist = Math.hypot(cxPct - tcx, cyPct - tcy);
 
                 if (dist < minCenterDist) {
@@ -1489,14 +1619,19 @@ export function startViewer(project, options = {}) {
             Object.values(pState.questions).forEach(q => {
                 if (!q.circles) return;
                 q.circles.forEach(c => {
+                    const cxPct = normalizePct(c.cx, 50);
+                    const cyPct = normalizePct(c.cy, 50);
+                    const rxPct = normalizePct(c.rx, 5);
+                    const ryPct = normalizePct(c.ry, 4);
+
                     const ellipse = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
                     ellipse.setAttribute('class', `student-circle ${c.status || 'neutral'}`);
                     ellipse.setAttribute('data-id', c.id);
                     ellipse.setAttribute('data-qid', q.id);
-                    ellipse.setAttribute('cx', (c.cx * 10).toFixed(1));
-                    ellipse.setAttribute('cy', (c.cy * 10).toFixed(1));
-                    ellipse.setAttribute('rx', (c.rx * 10).toFixed(1));
-                    ellipse.setAttribute('ry', (c.ry * 10).toFixed(1));
+                    ellipse.setAttribute('cx', (cxPct * 10).toFixed(1));
+                    ellipse.setAttribute('cy', (cyPct * 10).toFixed(1));
+                    ellipse.setAttribute('rx', (rxPct * 10).toFixed(1));
+                    ellipse.setAttribute('ry', (ryPct * 10).toFixed(1));
                     svg.appendChild(ellipse);
                 });
             });
@@ -1554,81 +1689,46 @@ export function startViewer(project, options = {}) {
         // Circle tool active
         if (circleControls) circleControls.style.display = 'flex';
 
-        const activeMultiple = getActiveMultipleChoiceQuestion();
         const pages = getActiveVisiblePages();
-        let singleQ = null;
+        let currentQ = null;
+        let currentPNum = null;
         for (const pNum of pages) {
             const pState = getOrCreateCirclePageState(pNum);
             if (pState && pState.questions) {
-                const sq = Object.values(pState.questions).find(q => q.mode === 'single');
-                if (sq) { singleQ = sq; break; }
+                const sq = Object.values(pState.questions)[0];
+                if (sq) { currentQ = sq; currentPNum = pNum; break; }
             }
         }
 
-        if (activeMultiple) {
-            const q = activeMultiple.question;
-            const circlesCount = q.circles ? q.circles.length : 0;
-            const isBeforeCorrection = q.state !== 'correct' && q.state !== 'incorrect';
+        if (checkBtn) checkBtn.style.display = 'none';
 
-            if (checkBtn) {
-                checkBtn.style.display = (q.state === 'incorrect') ? 'none' : 'inline-flex';
-                if (q.state === 'correct') {
-                    checkBtn.disabled = true;
-                    checkBtn.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>Réussi !</span>`;
+        if (currentQ) {
+            if (countPill) {
+                countPill.style.display = 'inline-block';
+                if (currentQ.state === 'correct') {
+                    countPill.textContent = 'Réussi ! 🎯';
+                } else if (currentQ.state === 'incorrect') {
+                    countPill.textContent = 'Incorrect';
                 } else {
-                    checkBtn.disabled = circlesCount === 0 || !isBeforeCorrection;
-                    checkBtn.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>Corriger</span>`;
+                    countPill.textContent = 'Cliquez sur l\'option';
                 }
             }
 
             if (retryBtn) {
-                retryBtn.style.display = (q.state === 'incorrect') ? 'inline-flex' : 'none';
-            }
-
-            if (countPill) {
-                countPill.style.display = 'inline-block';
-                if (q.state === 'correct') {
-                    countPill.textContent = 'Réussi ! 🎯';
-                } else if (q.state === 'incorrect') {
-                    countPill.textContent = 'Incorrect';
-                } else {
-                    countPill.textContent = `${circlesCount} sélectionnée(s)`;
-                }
-            }
-
-            // Undo and Clear: active ONLY for multiple choice questions AND before clicking "Corriger"
-            const canUndoOrClear = isBeforeCorrection && circlesCount > 0;
-            if (undoBtn) {
-                undoBtn.disabled = !canUndoOrClear;
-                undoBtn.title = "Annuler le dernier cercle";
-            }
-            if (clearBtn) {
-                clearBtn.disabled = !canUndoOrClear;
-                clearBtn.title = "Effacer tous les cercles";
+                retryBtn.style.display = (currentQ.state === 'incorrect') ? 'inline-flex' : 'none';
             }
         } else {
-            // Single choice questions or pages without multiple choice
-            if (checkBtn) checkBtn.style.display = 'none';
+            if (countPill) countPill.style.display = 'none';
             if (retryBtn) retryBtn.style.display = 'none';
+        }
 
-            if (countPill) {
-                if (singleQ && singleQ.state === 'correct') {
-                    countPill.style.display = 'inline-block';
-                    countPill.textContent = 'Réussi ! 🎯';
-                } else {
-                    countPill.style.display = 'none';
-                }
-            }
-
-            // Inactive for single choice questions
-            if (undoBtn) {
-                undoBtn.disabled = true;
-                undoBtn.title = "Annuler non disponible";
-            }
-            if (clearBtn) {
-                clearBtn.disabled = true;
-                clearBtn.title = "Effacer non disponible";
-            }
+        if (undoBtn) {
+            undoBtn.disabled = true;
+            undoBtn.title = "Annuler non disponible";
+        }
+        if (clearBtn) {
+            clearBtn.disabled = !currentQ || !currentQ.circles || currentQ.circles.length === 0;
+            clearBtn.title = "Effacer la sélection";
         }
     }
 
@@ -1853,18 +1953,23 @@ export function startViewer(project, options = {}) {
 
     window.clearActivePageDrawing = function () {
         if (activeViewerTool === 'circle') {
-            const active = getActiveMultipleChoiceQuestion();
-            if (active && active.question) {
-                const q = active.question;
-                // Active ONLY for multiple choices questions AND before clicking "Corriger"
-                if (q.state !== 'correct' && q.state !== 'incorrect' && q.circles && q.circles.length > 0) {
-                    q.circles = [];
-                    q.state = 'ready';
-                    renderPageCircles(active.pNum);
-                    updateCircleBarUI();
-                    toast('Tous les cercles ont été effacés.');
+            const pages = getActiveVisiblePages();
+            let cleared = false;
+            pages.forEach(pNum => {
+                const pState = circleExerciseState[pNum];
+                if (pState && pState.questions) {
+                    Object.values(pState.questions).forEach(q => {
+                        if (q.circles && q.circles.length > 0) {
+                            q.circles = [];
+                            q.state = 'ready';
+                            cleared = true;
+                        }
+                    });
+                    renderPageCircles(pNum);
                 }
-            }
+            });
+            updateCircleBarUI();
+            toast(cleared ? 'Sélection réinitialisée.' : 'Aucun cercle à effacer.');
             return;
         }
 
@@ -1962,19 +2067,7 @@ export function startViewer(project, options = {}) {
             if (b1) { b1.setAttribute('aria-pressed', 'true'); b1.classList.add('active'); }
             if (b2) b2.classList.add('active');
             if (panel) { panel.hidden = false; panel.dataset.tool = 'circle'; }
-            const pIdx = Math.max(0, currentPage - 1);
-            const pData = BOOK && BOOK.pages ? BOOK.pages[pIdx] : null;
-            const targets = (pData && pData.interactions ? pData.interactions : []).filter(i => i.type === 'circle-exercise');
-            if (targets.length > 0) {
-                const isMultiple = targets.some(t => t.mode === 'multiple');
-                if (isMultiple) {
-                    toast('Outil Entourer actif : tracez vos cercles puis validez via Corriger.');
-                } else {
-                    toast('Outil Entourer actif : tracez un cercle autour de la réponse.');
-                }
-            } else {
-                toast('Outil Entourer actif : tracez un cercle sur la page.');
-            }
+            toast('Outil Entourer actif : cliquez ou touchez une option pour l\'entourer.');
             setupAllAnnotCanvases();
         } else if (activeViewerTool === 'eraser') {
             const b1 = document.getElementById('eraserBtn');
@@ -2104,11 +2197,32 @@ export function startViewer(project, options = {}) {
                 ctx.lineTo(x, y);
                 ctx.stroke();
             } else if (activeViewerTool === 'circle') {
-                const pState = circleExerciseState[pNum];
-                if (pState && pState.questions) {
-                    const qList = Object.values(pState.questions);
-                    if (qList.length > 0 && qList.every(q => q.state === 'correct')) {
-                        toast('Question déjà réussie ! 🎯');
+                const targets = getCircleTargetsForPage(pNum);
+                if (targets && targets.length > 0) {
+                    const canvasW = canvas.width;
+                    const canvasH = canvas.height;
+                    const clickXPct = (x / canvasW) * 100;
+                    const clickYPct = (y / canvasH) * 100;
+                    let hitTarget = null;
+                    let minDist = Infinity;
+
+                    for (const t of targets) {
+                        const bounds = getTargetBounds(t);
+                        const { tx, ty, tw, th, cx: tcx, cy: tcy } = bounds;
+                        if (clickXPct >= (tx - 3) && clickXPct <= (tx + tw + 3) &&
+                            clickYPct >= (ty - 3) && clickYPct <= (ty + th + 3)) {
+                            hitTarget = t;
+                            break;
+                        }
+                        const d = Math.hypot(clickXPct - tcx, clickYPct - tcy);
+                        if (d < minDist && d <= Math.max(tw, th) * 0.9) {
+                            minDist = d;
+                            hitTarget = t;
+                        }
+                    }
+
+                    if (hitTarget) {
+                        selectCircleOption(pNum, hitTarget);
                         isAnnotDrawing = false;
                         return;
                     }
@@ -2352,30 +2466,30 @@ export function startViewer(project, options = {}) {
                 }
 
                 if (targetQ.mode === 'single') {
-                    // Single-choice mode: immediate evaluation per Section 3
-                    targetQ.circles = []; // Previous circle replaced per Section 3.2
-                    const correctTargets = targetQ.targets.filter(t => t.isCorrect !== false);
-                    const isMatched = correctTargets.some(t => checkCircleMatchesTarget(cxPct, cyPct, rxPct, ryPct, t));
-
-                    const newCircle = {
-                        id: 'circle_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-                        questionId: targetQ.id,
-                        cx: cxPct,
-                        cy: cyPct,
-                        rx: rxPct,
-                        ry: ryPct,
-                        status: isMatched ? 'correct' : 'incorrect',
-                        attempt: targetQ.attempt,
-                    };
-                    targetQ.circles.push(newCircle);
-                    targetQ.state = isMatched ? 'correct' : 'incorrect';
-                    renderPageCircles(pNum);
-                    updateCircleBarUI();
-
-                    if (isMatched) {
-                        playCelebrationChime();
-                        toast('Bonne réponse ! 🎯');
+                    // Single-choice mode: immediate evaluation
+                    // Check if stroke matches any target configured for this question
+                    const matchedTarget = targetQ.targets.find(t => checkCircleMatchesTarget(cxPct, cyPct, rxPct, ryPct, t));
+                    if (matchedTarget) {
+                        // Snap cleanly to the exact configured zone in Studio Pro!
+                        selectCircleOption(pNum, matchedTarget);
                     } else {
+                        // Freehand stroke did not match any target zone
+                        targetQ.circles = [];
+                        const newCircle = {
+                            id: 'circle_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+                            questionId: targetQ.id,
+                            cx: cxPct,
+                            cy: cyPct,
+                            rx: rxPct,
+                            ry: ryPct,
+                            status: 'incorrect',
+                            attempt: targetQ.attempt || 1,
+                        };
+                        targetQ.circles.push(newCircle);
+                        targetQ.state = 'incorrect';
+                        targetQ.attempt = (targetQ.attempt || 1) + 1;
+                        renderPageCircles(pNum);
+                        updateCircleBarUI();
                         playErrorTone();
                         toast('Pas tout à fait... Réessayez !');
                     }
@@ -2709,10 +2823,14 @@ export function startViewer(project, options = {}) {
 
     function getYouTubeEmbedUrl(url) {
         if (!url || typeof url !== 'string') return null;
-        const regExp = /(?:v=|\/embed\/|\/shorts\/|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-        const match = url.match(regExp);
-        if (match && match[1]) {
-            return `https://www.youtube-nocookie.com/embed/${match[1]}?autoplay=1&rel=0&modestbranding=1`;
+        const trimmed = url.trim();
+        const vMatch = trimmed.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+        if (vMatch && vMatch[1]) {
+            return `https://www.youtube-nocookie.com/embed/${vMatch[1]}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1`;
+        }
+        const pathMatch = trimmed.match(/(?:youtu\.be\/|\/(?:embed|shorts|live)\/)([a-zA-Z0-9_-]{11})/);
+        if (pathMatch && pathMatch[1]) {
+            return `https://www.youtube-nocookie.com/embed/${pathMatch[1]}?autoplay=1&rel=0&modestbranding=1&enablejsapi=1`;
         }
         return null;
     }
@@ -2727,10 +2845,14 @@ export function startViewer(project, options = {}) {
         const fallbackLink = document.getElementById('video-modal-link-fallback');
 
         const embedUrl = getYouTubeEmbedUrl(url);
-        if (!embedUrl) return;
+        if (!embedUrl) {
+            toast('Lien YouTube manquant ou invalide.');
+            return;
+        }
 
         if (titleEl) {
-            titleEl.innerHTML = `<span style="color:#ef4444;">▶</span> ${escapeHtml(title || 'Vidéo YouTube')}`;
+            const hasCustomTitle = title && !/^(?:vid[ée]o\s*youtube)$/i.test(title.trim());
+            titleEl.innerHTML = `<span style="color:#ef4444;margin-right:6px">▶</span> ${escapeHtml(hasCustomTitle ? title : 'Vidéo YouTube')}`;
         }
         if (ytBtn) {
             ytBtn.href = url || '#';
